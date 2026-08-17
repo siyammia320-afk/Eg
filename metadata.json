@@ -1,0 +1,6 @@
+{
+  "name": "FB Creator",
+  "description": "Facebook account creator & SMS OTP manager with floating overlay button.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
