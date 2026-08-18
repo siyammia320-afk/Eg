@@ -59,11 +59,6 @@ class MainViewModel(
                         val key = "${otp.number}_${otp.otpCode}"
                         if (!autoCopiedOtps.contains(key)) {
                             autoCopiedOtps.add(key)
-                            // Send to Telegram if Chat ID configured
-                            val chatId = repository.getTelegramChatId()
-                            if (chatId.isNotBlank()) {
-                                repository.sendTelegramOtp(otp.number, otp.otpCode)
-                            }
                             appContext?.let { ctx ->
                                 try {
                                     val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
