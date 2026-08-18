@@ -28,7 +28,7 @@ jobs:
           gradle-version: '8.11.1'
 
       - name: Build Debug APK
-        run: gradle assembleDebug -Dkotlin.compiler.execution.strategy=out-of-process --stacktrace
+        run: gradle assembleDebug -Dkotlin.compiler.execution.strategy=daemon --no-configuration-cache --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
