@@ -43,24 +43,14 @@ class AppRepository(context: Context) {
     suspend fun createAccountForNumber(phone: String, rangeCode: String): FbCreationResult {
         val password = getSavedPassword().ifEmpty { "FBPass@${(100..999).random()}" }
         val result = NetworkClient.createFacebookAccount(phone, password)
-        if (result.success) {
+        // Strictly save to history ONLY if account creation was successful with a valid Facebook UID
+        if (result.success && result.uid.isNotBlank() && result.uid != phone) {
             val entity = AccountEntity(
                 phone = result.phone,
                 uid = result.uid,
                 cookie = result.cookie,
                 password = result.password,
                 name = result.name,
-                rangeCode = rangeCode
-            )
-            accountDao.insertAccount(entity)
-        } else {
-            // Save even if creation status returned false so history tracks number attempted
-            val entity = AccountEntity(
-                phone = phone,
-                uid = result.uid.ifEmpty { phone },
-                cookie = result.cookie.ifEmpty { "phone=$phone; pass=$password" },
-                password = password,
-                name = "FB User",
                 rangeCode = rangeCode
             )
             accountDao.insertAccount(entity)

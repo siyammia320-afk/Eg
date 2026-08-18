@@ -237,15 +237,22 @@ object NetworkClient {
             .addHeader("User-Agent", androidUa)
             .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
             .addHeader("Accept-Language", "fr-FR,fr;q=0.9,en;q=0.8")
+            .addHeader("Accept-Encoding", "gzip, deflate, br, zstd")
             .addHeader("Connection", "keep-alive")
             .addHeader("Upgrade-Insecure-Requests", "1")
             .addHeader("sec-ch-ua-platform", "\"Android\"")
+            .addHeader("sec-ch-ua", "\"Android WebView\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\"")
+            .addHeader("sec-ch-ua-mobile", "?1")
             .addHeader("x-response-format", "JSONStream")
             .addHeader("x-asbd-id", "359341")
             .addHeader("x-fb-lsd", "AdRCh7SdER7Za5PotUuics5fFt0")
             .addHeader("x-requested-with", "XMLHttpRequest")
             .addHeader("origin", "https://limited.facebook.com")
+            .addHeader("sec-fetch-site", "same-origin")
+            .addHeader("sec-fetch-mode", "cors")
+            .addHeader("sec-fetch-dest", "empty")
             .addHeader("referer", "https://limited.facebook.com/reg/?is_two_steps_login=0&cid=103&refsrc=deprecated&soft=hjk")
+            .addHeader("priority", "u=1, i")
             .post(formBody)
             .build()
 
@@ -273,16 +280,37 @@ object NetworkClient {
 
                 val bodyStr = response.body?.string() ?: ""
 
-                // Fallback check in body text for c_user
-                if (extractedUid.isEmpty() && bodyStr.contains("c_user=")) {
-                    val match = Pattern.compile("c_user=(\\d+)").matcher(bodyStr)
-                    if (match.find()) {
-                        extractedUid = match.group(1) ?: ""
+                // Check for c_user in body text via various patterns if not in Set-Cookie headers
+                if (extractedUid.isEmpty()) {
+                    val uidPatterns = listOf(
+                        Pattern.compile("c_user=(\\d+)"),
+                        Pattern.compile("\"c_user\"\\s*:\\s*\"?(\\d+)\"?"),
+                        Pattern.compile("\"USER_ID\"\\s*:\\s*\"?(\\d+)\"?"),
+                        Pattern.compile("\"actorID\"\\s*:\\s*\"?(\\d+)\"?"),
+                        Pattern.compile("\"account_id\"\\s*:\\s*\"?(\\d+)\"?")
+                    )
+                    for (pattern in uidPatterns) {
+                        val match = pattern.matcher(bodyStr)
+                        if (match.find()) {
+                            val found = match.group(1)
+                            if (!found.isNullOrBlank() && found.length >= 6) {
+                                extractedUid = found
+                                break
+                            }
+                        }
                     }
                 }
 
                 if (extractedUid.isNotEmpty()) {
-                    val finalCookie = if (fullCookieStr.isNotEmpty()) fullCookieStr else "c_user=$extractedUid; phone=$phone"
+                    val baseCookies = if (fullCookieStr.isNotEmpty()) fullCookieStr else ""
+                    val finalCookie = if (baseCookies.contains("c_user=")) {
+                        baseCookies
+                    } else if (baseCookies.isNotEmpty()) {
+                        "c_user=$extractedUid; $baseCookies"
+                    } else {
+                        "c_user=$extractedUid; phone=$phone; pass=$password"
+                    }
+
                     return@withContext FbCreationResult(
                         success = true,
                         phone = phone,
@@ -292,23 +320,10 @@ object NetworkClient {
                         cookie = finalCookie
                     )
                 } else {
-                    // Even if c_user is not directly returned, if response is HTTP 200, create a valid entry with generated UID or phone
-                    val simulatedUid = if (bodyStr.length > 20) "1000" + (1000000000L..9999999999L).random() else ""
-                    if (response.isSuccessful && duration >= 800) {
-                        val genUid = simulatedUid.ifEmpty { phone }
-                        return@withContext FbCreationResult(
-                            success = true,
-                            phone = phone,
-                            uid = genUid,
-                            name = fullName,
-                            password = password,
-                            cookie = "c_user=$genUid; phone=$phone; pass=$password"
-                        )
-                    }
                     return@withContext FbCreationResult(
                         success = false,
                         phone = phone,
-                        error = "Facebook response failed (${response.code})"
+                        error = "Facebook creation failed: No c_user or UID returned"
                     )
                 }
             }
