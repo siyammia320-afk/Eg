@@ -14,8 +14,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,6 +38,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -42,6 +47,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -88,6 +94,7 @@ fun MainScreen(viewModel: MainViewModel) {
 
     var passwordInput by remember { mutableStateOf(uiState.savedPassword) }
     var showHistoryDialog by remember { mutableStateOf(false) }
+    var showBotSetupDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.checkPermissions(context)
@@ -120,6 +127,16 @@ fun MainScreen(viewModel: MainViewModel) {
                 ),
                 actions = {
                     Button(
+                        onClick = { showBotSetupDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = if (uiState.telegramChatId.isNotBlank()) AccentGreen else PrimaryFbBlue),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .testTag("bot_setup_button")
+                    ) {
+                        Text("🤖 BOT SETUP", fontSize = 11.sp, color = TextPrimary)
+                    }
+                    Button(
                         onClick = { showHistoryDialog = true },
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
                         shape = RoundedCornerShape(6.dp),
@@ -127,7 +144,7 @@ fun MainScreen(viewModel: MainViewModel) {
                             .padding(end = 8.dp)
                             .testTag("open_history_button")
                     ) {
-                        Text("HISTORY (${uiState.accountsHistory.size})", fontSize = 12.sp, color = TextPrimary)
+                        Text("HISTORY (${uiState.accountsHistory.size})", fontSize = 11.sp, color = TextPrimary)
                     }
                 }
             )
@@ -163,6 +180,26 @@ fun MainScreen(viewModel: MainViewModel) {
                     onToggleClick = { viewModel.toggleService(context) },
                     onCreateNowClick = { viewModel.createAccountNow(context) },
                     isCreating = uiState.isCreatingAccount
+                )
+            }
+
+            // 3. ACCOUNT CREATION SETUP CARD (LANGUAGE, GENDER, AGE)
+            item {
+                AccountSetupCard(
+                    currentLanguage = uiState.nameLanguage,
+                    currentGender = uiState.genderConfig,
+                    currentAge = uiState.ageFilter,
+                    onLanguageChange = { viewModel.setNameLanguage(it) },
+                    onGenderChange = { viewModel.setGenderConfig(it) },
+                    onAgeChange = { viewModel.setAgeFilter(it) }
+                )
+            }
+
+            // 4. TELEGRAM BOT SETUP CARD
+            item {
+                BotSetupCard(
+                    chatId = uiState.telegramChatId,
+                    onConfigureClick = { showBotSetupDialog = true }
                 )
             }
 
@@ -260,6 +297,18 @@ fun MainScreen(viewModel: MainViewModel) {
             onCopyUid = { copyTextToClipboard(context, "UID", it) },
             onDelete = { viewModel.deleteAccount(it) },
             onClearAll = { viewModel.clearHistory() }
+        )
+    }
+
+    if (showBotSetupDialog) {
+        BotSetupDialog(
+            currentChatId = uiState.telegramChatId,
+            onDismiss = { showBotSetupDialog = false },
+            onSave = { newChatId ->
+                viewModel.setTelegramChatId(newChatId)
+                showBotSetupDialog = false
+                Toast.makeText(context, "Telegram Chat ID Saved!", Toast.LENGTH_SHORT).show()
+            }
         )
     }
 }
@@ -573,13 +622,34 @@ fun AccountItemRow(
                 }
             }
 
+            val clipboardManager = LocalClipboardManager.current
+            val context = androidx.compose.ui.platform.LocalContext.current
+
             if (!account.otp.isNullOrEmpty()) {
-                Text(
-                    text = "OTP: ${account.otp}",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = AccentGreen
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "OTP: ${account.otp}",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = AccentGreen
+                    )
+                    Button(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(account.otp))
+                            Toast.makeText(context, "OTP Copied: ${account.otp}", Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
+                        shape = RoundedCornerShape(4.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Text("COPY OTP", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                    }
+                }
             } else {
                 val isExpired = (System.currentTimeMillis() - account.timestamp) > (20 * 60 * 1000L)
                 Text(
@@ -742,4 +812,317 @@ private fun copyTextToClipboard(context: Context, label: String, text: String) {
     val clip = ClipData.newPlainText(label, text)
     clipboard.setPrimaryClip(clip)
     Toast.makeText(context, "Copied $label: $text", Toast.LENGTH_SHORT).show()
+}
+
+@Composable
+private fun AccountSetupCard(
+    currentLanguage: String,
+    currentGender: String,
+    currentAge: String,
+    onLanguageChange: (String) -> Unit,
+    onGenderChange: (String) -> Unit,
+    onAgeChange: (String) -> Unit
+) {
+    val sampleProfile = remember(currentLanguage, currentGender, currentAge) {
+        com.example.data.NameGenerator.generateProfile(currentGender, currentLanguage, currentAge)
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "⚙️ ACCOUNT SETUP & NAME GENERATOR",
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = TextPrimary
+            )
+
+            // 1. NAME LANGUAGE SELECTOR
+            Text(
+                text = "Name Language (নামের ভাষা):",
+                fontSize = 12.sp,
+                color = TextSecondary,
+                fontWeight = FontWeight.Bold
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChipButton(
+                    text = "🇧🇩 বাংলা",
+                    isSelected = currentLanguage == "BANGLA",
+                    onClick = { onLanguageChange("BANGLA") },
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChipButton(
+                    text = "🇬🇧 English",
+                    isSelected = currentLanguage == "ENGLISH",
+                    onClick = { onLanguageChange("ENGLISH") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // 2. GENDER SELECTOR
+            Text(
+                text = "Gender (লিঙ্গ):",
+                fontSize = 12.sp,
+                color = TextSecondary,
+                fontWeight = FontWeight.Bold
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChipButton(
+                    text = "👧 Female (মেয়ে)",
+                    isSelected = currentGender == "FEMALE",
+                    onClick = { onGenderChange("FEMALE") },
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChipButton(
+                    text = "👦 Male (ছেলে)",
+                    isSelected = currentGender == "MALE",
+                    onClick = { onGenderChange("MALE") },
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChipButton(
+                    text = "🎲 Random",
+                    isSelected = currentGender == "RANDOM",
+                    onClick = { onGenderChange("RANDOM") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // 3. AGE FILTER
+            Text(
+                text = "Age Range (বয়সসীমা):",
+                fontSize = 12.sp,
+                color = TextSecondary,
+                fontWeight = FontWeight.Bold
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChipButton(
+                    text = "18+ (১৮-৩৫ বছর)",
+                    isSelected = currentAge == "18+",
+                    onClick = { onAgeChange("18+") },
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChipButton(
+                    text = "21+ (২১-৩৫ বছর)",
+                    isSelected = currentAge == "21+",
+                    onClick = { onAgeChange("21+") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // LIVE SAMPLE PREVIEW BADGE
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(6.dp),
+                color = Color(0xFF1E2638),
+                border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryFbBlue.copy(alpha = 0.5f))
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Text(
+                        text = "LIVE NAME PREVIEW:",
+                        fontSize = 10.sp,
+                        color = TextSecondary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${sampleProfile.fullName} (${if (sampleProfile.sexCode == "1") "Female" else "Male"}, Age Birth Year: ${sampleProfile.year})",
+                        fontSize = 14.sp,
+                        color = AccentGreen,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterChipButton(
+    text: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (isSelected) PrimaryFbBlue else CardBackground
+        ),
+        shape = RoundedCornerShape(6.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isSelected) PrimaryFbBlue else BorderColor
+        ),
+        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+        modifier = modifier.height(38.dp)
+    ) {
+        Text(
+            text = text,
+            fontSize = 11.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+            color = if (isSelected) Color.White else TextSecondary,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun BotSetupCard(
+    chatId: String,
+    onConfigureClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "🤖 TELEGRAM BOT SETUP",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = TextPrimary
+                )
+                Text(
+                    text = if (chatId.isBlank()) "Status: Not Configured (Click to set Chat ID)" else "Status: Active (Chat ID: $chatId)",
+                    fontSize = 12.sp,
+                    color = if (chatId.isBlank()) TextSecondary else AccentGreen,
+                    fontWeight = if (chatId.isBlank()) FontWeight.Normal else FontWeight.Bold
+                )
+            }
+
+            Button(
+                onClick = onConfigureClick,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (chatId.isBlank()) PrimaryFbBlue else AccentGreen
+                ),
+                shape = RoundedCornerShape(6.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = if (chatId.isBlank()) "SETUP" else "EDIT ID",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BotSetupDialog(
+    currentChatId: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var inputChatId by remember { mutableStateOf(currentChatId) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = { onSave(inputChatId) },
+                colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Text("SAVE", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Text("CANCEL", color = TextSecondary)
+            }
+        },
+        title = {
+            Text(
+                text = "🤖 Telegram Bot Setup",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                color = TextPrimary
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Enter your Telegram Chat ID below. Your received OTPs will be automatically forwarded to your Telegram bot.",
+                    fontSize = 13.sp,
+                    color = TextSecondary
+                )
+
+                OutlinedTextField(
+                    value = inputChatId,
+                    onValueChange = { inputChatId = it },
+                    label = { Text("Telegram Chat ID") },
+                    placeholder = { Text("e.g. 123456789") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryFbBlue,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Warning / Instruction Box in English as requested
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(6.dp),
+                    color = Color(0xFF2A2010),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB300))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "⚠️ IMPORTANT INSTRUCTION:",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = Color(0xFFFFD54F)
+                        )
+                        Text(
+                            text = "Please start the Telegram Bot first using your Telegram Chat ID:\n@FB_TOOL_OTP_BOT",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFFFF8E1)
+                        )
+                    }
+                }
+            }
+        },
+        containerColor = CardBackground,
+        shape = RoundedCornerShape(12.dp)
+    )
 }

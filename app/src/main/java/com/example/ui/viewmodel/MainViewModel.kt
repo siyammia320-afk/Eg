@@ -11,10 +11,12 @@ import androidx.lifecycle.viewModelScope
 import com.example.model.AccountEntity
 import com.example.repository.AppRepository
 import com.example.service.FloatingOverlayService
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class MainUiState(
@@ -26,31 +28,102 @@ data class MainUiState(
     val accountsHistory: List<AccountEntity> = emptyList(),
     val isLoadingRanges: Boolean = false,
     val isCreatingAccount: Boolean = false,
+    val nameLanguage: String = "BANGLA",
+    val genderConfig: String = "FEMALE",
+    val ageFilter: String = "18+",
+    val telegramChatId: String = "",
     val statusMessage: String? = null
 )
 
-class MainViewModel(private val repository: AppRepository) : ViewModel() {
+class MainViewModel(
+    private val repository: AppRepository,
+    private val appContext: Context? = null
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
+    private val autoCopiedOtps = mutableSetOf<String>()
 
     init {
         loadInitialData()
         observeAccounts()
+        startAutomaticOtpPolling()
+    }
+
+    private fun startAutomaticOtpPolling() {
+        viewModelScope.launch {
+            while (isActive) {
+                try {
+                    val otps = repository.checkAndProcessOtps()
+                    for (otp in otps) {
+                        val key = "${otp.number}_${otp.otpCode}"
+                        if (!autoCopiedOtps.contains(key)) {
+                            autoCopiedOtps.add(key)
+                            // Send to Telegram if Chat ID configured
+                            val chatId = repository.getTelegramChatId()
+                            if (chatId.isNotBlank()) {
+                                repository.sendTelegramOtp(otp.number, otp.otpCode)
+                            }
+                            appContext?.let { ctx ->
+                                try {
+                                    val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("OTP Code", otp.otpCode)
+                                    clipboard.setPrimaryClip(clip)
+                                    android.widget.Toast.makeText(ctx, "OTP Auto Copied: ${otp.otpCode}", android.widget.Toast.LENGTH_LONG).show()
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                delay(2500)
+            }
+        }
     }
 
     private fun loadInitialData() {
         val pass = repository.getSavedPassword()
         val range = repository.getSelectedRange()
         val active = repository.isServiceActive()
+        val lang = repository.getNameLanguage()
+        val gender = repository.getGenderConfig()
+        val age = repository.getAgeFilter()
+        val chatId = repository.getTelegramChatId()
 
         _uiState.value = _uiState.value.copy(
             savedPassword = pass,
             selectedRange = range,
-            isServiceRunning = active
+            isServiceRunning = active,
+            nameLanguage = lang,
+            genderConfig = gender,
+            ageFilter = age,
+            telegramChatId = chatId
         )
 
         refreshFacebookRanges()
+    }
+
+    fun setTelegramChatId(chatId: String) {
+        repository.setTelegramChatId(chatId)
+        _uiState.value = _uiState.value.copy(telegramChatId = chatId)
+    }
+
+    fun setNameLanguage(lang: String) {
+        repository.setNameLanguage(lang)
+        _uiState.value = _uiState.value.copy(nameLanguage = lang)
+    }
+
+    fun setGenderConfig(gender: String) {
+        repository.setGenderConfig(gender)
+        _uiState.value = _uiState.value.copy(genderConfig = gender)
+    }
+
+    fun setAgeFilter(age: String) {
+        repository.setAgeFilter(age)
+        _uiState.value = _uiState.value.copy(ageFilter = age)
     }
 
     private fun observeAccounts() {
@@ -161,8 +234,9 @@ class MainViewModel(private val repository: AppRepository) : ViewModel() {
             if (result.success && context != null) {
                 try {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    val clip = android.content.ClipData.newPlainText("NUMBER", result.phone)
+                    val clip = android.content.ClipData.newPlainText("UID", result.uid)
                     clipboard.setPrimaryClip(clip)
+                    android.widget.Toast.makeText(context, "Account Created! c_user UID Copied: ${result.uid}", android.widget.Toast.LENGTH_LONG).show()
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -170,7 +244,7 @@ class MainViewModel(private val repository: AppRepository) : ViewModel() {
 
             _uiState.value = _uiState.value.copy(
                 isCreatingAccount = false,
-                statusMessage = if (result.success) "SUCCESSFUL!\nNumber Copied: ${result.phone}\nUID: ${result.uid}" else "FAILED!\nNumber: ${result.phone}\n${result.error.ifEmpty { "Creation failed" }}"
+                statusMessage = if (result.success) "SUCCESSFUL!\nAuto Copied c_user UID: ${result.uid}\nNumber: ${result.phone}" else "FAILED!\nNumber: ${result.phone}\n${result.error.ifEmpty { "Creation failed" }}"
             )
         }
     }
@@ -202,11 +276,14 @@ class MainViewModel(private val repository: AppRepository) : ViewModel() {
     }
 }
 
-class MainViewModelFactory(private val repository: AppRepository) : ViewModelProvider.Factory {
+class MainViewModelFactory(
+    private val repository: AppRepository,
+    private val context: Context? = null
+) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(MainViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return MainViewModel(repository) as T
+            return MainViewModel(repository, context) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

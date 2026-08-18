@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> }
 
     private val viewModel: MainViewModel by viewModels {
-        MainViewModelFactory(AppRepository(applicationContext))
+        MainViewModelFactory(AppRepository(applicationContext), applicationContext)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

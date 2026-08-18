@@ -12,6 +12,9 @@ interface AccountDao {
     @Query("SELECT * FROM accounts ORDER BY timestamp DESC")
     fun getAllAccounts(): Flow<List<AccountEntity>>
 
+    @Query("SELECT * FROM accounts")
+    suspend fun getAllAccountsList(): List<AccountEntity>
+
     @Query("SELECT * FROM accounts WHERE phone = :phone LIMIT 1")
     suspend fun getAccountByPhone(phone: String): AccountEntity?
 
