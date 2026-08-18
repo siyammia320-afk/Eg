@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 data class MainUiState(
     val savedPassword: String = "",
     val facebookRanges: List<String> = emptyList(),
-    val selectedRange: String = "8801XXX",
+    val selectedRange: String = "",
     val isServiceRunning: Boolean = false,
     val isOverlayPermissionGranted: Boolean = false,
     val accountsHistory: List<AccountEntity> = emptyList(),
@@ -32,6 +32,7 @@ data class MainUiState(
     val genderConfig: String = "FEMALE",
     val ageFilter: String = "18+",
     val telegramChatId: String = "",
+    val telegramUsername: String = "",
     val statusMessage: String? = null
 )
 
@@ -87,6 +88,7 @@ class MainViewModel(
         val gender = repository.getGenderConfig()
         val age = repository.getAgeFilter()
         val chatId = repository.getTelegramChatId()
+        val username = repository.getTelegramUsername()
 
         _uiState.value = _uiState.value.copy(
             savedPassword = pass,
@@ -95,15 +97,26 @@ class MainViewModel(
             nameLanguage = lang,
             genderConfig = gender,
             ageFilter = age,
-            telegramChatId = chatId
+            telegramChatId = chatId,
+            telegramUsername = username
         )
 
         refreshFacebookRanges()
     }
 
-    fun setTelegramChatId(chatId: String) {
-        repository.setTelegramChatId(chatId)
-        _uiState.value = _uiState.value.copy(telegramChatId = chatId)
+    fun setTelegramBotConfig(chatId: String, username: String) {
+        val cleanChatId = chatId.trim()
+        val cleanUser = when {
+            username.isBlank() -> ""
+            username.startsWith("@") -> username.trim()
+            else -> "@${username.trim()}"
+        }
+        repository.setTelegramChatId(cleanChatId)
+        repository.setTelegramUsername(cleanUser)
+        _uiState.value = _uiState.value.copy(
+            telegramChatId = cleanChatId,
+            telegramUsername = cleanUser
+        )
     }
 
     fun setNameLanguage(lang: String) {
@@ -210,37 +223,69 @@ class MainViewModel(
         )
     }
 
+    private val isCreatingInViewModel = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun createAccountNow(context: Context? = null) {
+        if (!isCreatingInViewModel.compareAndSet(false, true)) {
+            _uiState.value = _uiState.value.copy(statusMessage = "⚠️ Account creation is already in progress...")
+            return
+        }
+
         val range = _uiState.value.selectedRange
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isCreatingAccount = true, statusMessage = "Fetching number from $range...")
-            val phone = repository.fetchNumber(range)
-            if (phone.isNullOrEmpty()) {
-                _uiState.value = _uiState.value.copy(
-                    isCreatingAccount = false,
-                    statusMessage = "FAILED!\nNo number found for $range"
-                )
-                return@launch
-            }
-
-            _uiState.value = _uiState.value.copy(statusMessage = "Number Received: $phone\nCreating account...")
-            val result = repository.createAccountForNumber(phone, range)
-
-            if (result.success && context != null) {
-                try {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    val clip = android.content.ClipData.newPlainText("UID", result.uid)
-                    clipboard.setPrimaryClip(clip)
-                    android.widget.Toast.makeText(context, "Account Created! c_user UID Copied: ${result.uid}", android.widget.Toast.LENGTH_LONG).show()
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-
+        if (range.isBlank()) {
+            isCreatingInViewModel.set(false)
             _uiState.value = _uiState.value.copy(
                 isCreatingAccount = false,
-                statusMessage = if (result.success) "SUCCESSFUL!\nAuto Copied c_user UID: ${result.uid}\nNumber: ${result.phone}" else "FAILED!\nNumber: ${result.phone}\n${result.error.ifEmpty { "Creation failed" }}"
+                statusMessage = "❌ No live range selected! Please refresh ranges."
             )
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                _uiState.value = _uiState.value.copy(
+                    isCreatingAccount = true,
+                    statusMessage = "⏳ [1/3] Fetching number from live range $range..."
+                )
+
+                val phone = repository.fetchNumber(range)
+                if (phone.isNullOrEmpty()) {
+                    _uiState.value = _uiState.value.copy(
+                        isCreatingAccount = false,
+                        statusMessage = "❌ FAILED!\nNo live number available for range $range"
+                    )
+                    return@launch
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    statusMessage = "📱 [2/3] Number Received: $phone\n⚡ Registering Facebook Account..."
+                )
+
+                val result = repository.createAccountForNumber(phone, range)
+
+                if (result.success && context != null) {
+                    try {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("UID", result.uid)
+                        clipboard.setPrimaryClip(clip)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
+                val finalStatus = if (result.success) {
+                    "✅ [3/3] ACCOUNT CREATED!\nUID: ${result.uid} (Auto Copied)\nNumber: ${result.phone}\nName: ${result.name}"
+                } else {
+                    "❌ CREATION FAILED!\nNumber: ${result.phone}\nError: ${result.error.ifEmpty { "Registration rejected" }}"
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    isCreatingAccount = false,
+                    statusMessage = finalStatus
+                )
+            } finally {
+                isCreatingInViewModel.set(false)
+            }
         }
     }
 

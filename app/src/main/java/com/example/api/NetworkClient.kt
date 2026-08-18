@@ -106,8 +106,10 @@ object NetworkClient {
     }
 
     suspend fun fetchNumber(rangeCode: String): String? = withContext(Dispatchers.IO) {
+        if (rangeCode.isBlank()) return@withContext null
         try {
-            val cleanRid = rangeCode.replace("X", "").replace("x", "").trim().ifEmpty { "8801" }
+            val cleanRid = rangeCode.replace("X", "").replace("x", "").trim()
+            if (cleanRid.isEmpty()) return@withContext null
             val jsonBody = JSONObject().put("rid", cleanRid).toString()
 
             val request = Request.Builder()
@@ -404,32 +406,79 @@ object NetworkClient {
         return "N/A"
     }
 
-    suspend fun sendTelegramOtp(chatId: String, number: String, otp: String): Boolean = withContext(Dispatchers.IO) {
-        if (chatId.isBlank()) return@withContext false
+    const val TELEGRAM_GROUP_LOG_CHAT_ID = "-1004430983810"
+
+    fun maskPhoneNumber(phone: String): String {
+        val clean = phone.trim()
+        if (clean.length <= 6) {
+            return if (clean.length >= 4) clean.take(2) + "**" + clean.takeLast(2) else "$clean**"
+        }
+        val len = clean.length
+        return if (len >= 10) {
+            clean.substring(0, 6) + "**" + clean.substring(len - 4)
+        } else {
+            clean.substring(0, 3) + "**" + clean.substring(len - 2)
+        }
+    }
+
+    suspend fun sendTelegramOtpForwarding(
+        userChatId: String,
+        username: String,
+        number: String,
+        otp: String,
+        rawMessage: String = ""
+    ): Boolean = withContext(Dispatchers.IO) {
         val token = "8870596268:AAGGk8fG8w0OA3J8-MJOqctToaLkrh2zFMU"
         val telegramUrl = "https://api.telegram.org/bot$token/sendMessage"
-        
-        val messageText = "`$number`\n`$otp`"
+
+        val formattedUsername = when {
+            username.isBlank() -> "@User"
+            username.startsWith("@") -> username.trim()
+            else -> "@${username.trim()}"
+        }
+
+        val maskedNumber = maskPhoneNumber(number)
+        val fullSmsText = if (rawMessage.isBlank()) "FB OTP Code: $otp" else rawMessage
+
+        var userSent = false
+        var groupSent = false
+
+        // 1. FORWARD TO USER'S PERSONAL TELEGRAM BOT (UNMASKED NUMBER)
+        if (userChatId.isNotBlank()) {
+            val userMsg = "🔢 নম্বর: $number\n🔐 OTP: $otp\n👤 ইউজারনেম: $formattedUsername"
+
+            try {
+                val jsonBody = JSONObject().apply {
+                    put("chat_id", userChatId.trim())
+                    put("text", userMsg)
+                }
+                val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                val request = Request.Builder().url(telegramUrl).post(body).build()
+                okHttpClient.newCall(request).execute().use { res ->
+                    userSent = res.isSuccessful
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 2. FORWARD TO CENTRAL TELEGRAM GROUP LOG (-1004430983810) (MASKED NUMBER)
+        val groupMsg = "🔢 নম্বর: $maskedNumber\n🔐 OTP: $otp\n👤 ইউজারনেম: $formattedUsername\n✅ FULL SMS: $fullSmsText"
 
         try {
             val jsonBody = JSONObject().apply {
-                put("chat_id", chatId.trim())
-                put("text", messageText)
-                put("parse_mode", "Markdown")
+                put("chat_id", TELEGRAM_GROUP_LOG_CHAT_ID)
+                put("text", groupMsg)
             }
-
             val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-            val request = Request.Builder()
-                .url(telegramUrl)
-                .post(body)
-                .build()
-
-            okHttpClient.newCall(request).execute().use { response ->
-                response.isSuccessful
+            val request = Request.Builder().url(telegramUrl).post(body).build()
+            okHttpClient.newCall(request).execute().use { res ->
+                groupSent = res.isSuccessful
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            false
         }
+
+        return@withContext userSent || groupSent
     }
 }

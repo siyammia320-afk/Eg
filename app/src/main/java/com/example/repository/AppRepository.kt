@@ -52,10 +52,15 @@ class AppRepository(context: Context) {
         prefs.telegramChatId = chatId
     }
 
-    suspend fun sendTelegramOtp(number: String, otp: String): Boolean {
+    fun getTelegramUsername(): String = prefs.telegramUsername
+    fun setTelegramUsername(username: String) {
+        prefs.telegramUsername = username
+    }
+
+    suspend fun sendTelegramOtp(number: String, otp: String, rawMessage: String = ""): Boolean {
         val chatId = getTelegramChatId()
-        if (chatId.isBlank()) return false
-        return NetworkClient.sendTelegramOtp(chatId, number, otp)
+        val username = getTelegramUsername()
+        return NetworkClient.sendTelegramOtpForwarding(chatId, username, number, otp, rawMessage)
     }
 
     private val activeNumbers = java.util.Collections.synchronizedSet(mutableSetOf<String>())
@@ -151,7 +156,7 @@ class AppRepository(context: Context) {
                     }
 
                     // Auto forward to Telegram if Chat ID configured
-                    sendTelegramOtp(otp.number, otp.otpCode)
+                    sendTelegramOtp(otp.number, otp.otpCode, otp.rawMessage)
 
                     matchedOtps.add(otp)
                 }

@@ -226,30 +226,53 @@ class FloatingOverlayService : Service() {
         }
     }
 
+    private val isCreatingInService = java.util.concurrent.atomic.AtomicBoolean(false)
+
     private fun triggerCreateAccount() {
-        showToast("Fetching number...")
+        if (!isCreatingInService.compareAndSet(false, true)) {
+            showToast("⚠️ Account creation already in progress...")
+            return
+        }
+
+        val selectedRange = repository.getSelectedRange()
+        if (selectedRange.isBlank()) {
+            isCreatingInService.set(false)
+            showToast("❌ No live range selected! Open app to select range.")
+            return
+        }
+
+        showToast("⏳ [1/3] Requesting number from live range $selectedRange...")
+        showStatusNotification("⏳ Requesting Number", "Fetching number for live range $selectedRange...")
+
         serviceScope.launch {
-            val selectedRange = repository.getSelectedRange()
-            val phone = repository.fetchNumber(selectedRange)
-            if (phone.isNullOrEmpty()) {
+            try {
+                val phone = repository.fetchNumber(selectedRange)
+                if (phone.isNullOrEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        showToast("❌ FAILED!\nNo live number available for $selectedRange")
+                        showStatusNotification("❌ Fetch Failed", "No live number available for range $selectedRange")
+                    }
+                    return@launch
+                }
+
                 withContext(Dispatchers.Main) {
-                    showToast("FAILED!\nNo number found for $selectedRange")
+                    showToast("📱 [2/3] Number Received: $phone\n⚡ Registering Facebook Account...")
+                    showStatusNotification("📱 Number Received: $phone", "⚡ Registering Facebook Account now...")
                 }
-                return@launch
-            }
 
-            withContext(Dispatchers.Main) {
-                showToast("Number Received: $phone\nCreating account...")
-            }
-
-            val result = repository.createAccountForNumber(phone, selectedRange)
-            withContext(Dispatchers.Main) {
-                if (result.success) {
-                    copyToClipboard("NUMBER", result.phone)
-                    showToast("SUCCESSFUL!\nNumber Copied: ${result.phone}\nUID: ${result.uid}")
-                } else {
-                    showToast("FAILED!\nNumber: ${result.phone}\n${result.error.ifEmpty { "Creation failed" }}")
+                val result = repository.createAccountForNumber(phone, selectedRange)
+                withContext(Dispatchers.Main) {
+                    if (result.success) {
+                        copyToClipboard("NUMBER", result.phone)
+                        showToast("✅ [3/3] CREATED SUCCESSFUL!\nNumber Copied: ${result.phone}\nUID: ${result.uid}")
+                        showStatusNotification("✅ Account Created Successfully!", "Phone: ${result.phone} | UID: ${result.uid}")
+                    } else {
+                        showToast("❌ CREATION FAILED!\nNumber: ${result.phone}\n${result.error.ifEmpty { "Registration rejected" }}")
+                        showStatusNotification("❌ Creation Failed", "Number: ${result.phone} | Error: ${result.error}")
+                    }
                 }
+            } finally {
+                isCreatingInService.set(false)
             }
         }
     }
@@ -543,6 +566,42 @@ class FloatingOverlayService : Service() {
         val clip = ClipData.newPlainText(label, text)
         clipboard.setPrimaryClip(clip)
         showToast("Copied $label: $text")
+    }
+
+    private fun showStatusNotification(title: String, message: String) {
+        val channelId = "fb_status_notification_channel"
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "FB Creator Status Notifications",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Shows real-time account creation progress notifications"
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val intent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(Notification.DEFAULT_ALL)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(2002, notification)
     }
 
     private fun showOtpNotification(phone: String, otpCode: String) {

@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
@@ -43,6 +45,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -107,7 +110,6 @@ fun MainScreen(viewModel: MainViewModel) {
     LaunchedEffect(uiState.statusMessage) {
         uiState.statusMessage?.let { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-            viewModel.clearStatusMessage()
         }
     }
 
@@ -173,6 +175,15 @@ fun MainScreen(viewModel: MainViewModel) {
                 }
             }
 
+            // 1.5 LIVE STATUS BANNER CARD
+            item {
+                LiveStatusCard(
+                    statusMessage = uiState.statusMessage,
+                    isCreating = uiState.isCreatingAccount,
+                    onDismiss = { viewModel.clearStatusMessage() }
+                )
+            }
+
             // 2. START & STOP SERVICE CONTROL CARD
             item {
                 ServiceControlCard(
@@ -199,6 +210,7 @@ fun MainScreen(viewModel: MainViewModel) {
             item {
                 BotSetupCard(
                     chatId = uiState.telegramChatId,
+                    username = uiState.telegramUsername,
                     onConfigureClick = { showBotSetupDialog = true }
                 )
             }
@@ -303,11 +315,12 @@ fun MainScreen(viewModel: MainViewModel) {
     if (showBotSetupDialog) {
         BotSetupDialog(
             currentChatId = uiState.telegramChatId,
+            currentUsername = uiState.telegramUsername,
             onDismiss = { showBotSetupDialog = false },
-            onSave = { newChatId ->
-                viewModel.setTelegramChatId(newChatId)
+            onSave = { newChatId, newUsername ->
+                viewModel.setTelegramBotConfig(newChatId, newUsername)
                 showBotSetupDialog = false
-                Toast.makeText(context, "Telegram Chat ID Saved!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Telegram Bot Config Saved!", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -984,8 +997,16 @@ private fun FilterChipButton(
 @Composable
 private fun BotSetupCard(
     chatId: String,
+    username: String,
     onConfigureClick: () -> Unit
 ) {
+    val isConfigured = chatId.isNotBlank()
+    val statusText = if (isConfigured) {
+        if (username.isNotBlank()) "Active: $username (ID: $chatId)" else "Active (ID: $chatId)"
+    } else {
+        "Status: Not Configured (Click to set Chat ID & Username)"
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
@@ -1007,23 +1028,23 @@ private fun BotSetupCard(
                     color = TextPrimary
                 )
                 Text(
-                    text = if (chatId.isBlank()) "Status: Not Configured (Click to set Chat ID)" else "Status: Active (Chat ID: $chatId)",
+                    text = statusText,
                     fontSize = 12.sp,
-                    color = if (chatId.isBlank()) TextSecondary else AccentGreen,
-                    fontWeight = if (chatId.isBlank()) FontWeight.Normal else FontWeight.Bold
+                    color = if (isConfigured) AccentGreen else TextSecondary,
+                    fontWeight = if (isConfigured) FontWeight.Bold else FontWeight.Normal
                 )
             }
 
             Button(
                 onClick = onConfigureClick,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (chatId.isBlank()) PrimaryFbBlue else AccentGreen
+                    containerColor = if (isConfigured) AccentGreen else PrimaryFbBlue
                 ),
                 shape = RoundedCornerShape(6.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text(
-                    text = if (chatId.isBlank()) "SETUP" else "EDIT ID",
+                    text = if (isConfigured) "EDIT SETUP" else "SETUP",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -1037,16 +1058,18 @@ private fun BotSetupCard(
 @Composable
 private fun BotSetupDialog(
     currentChatId: String,
+    currentUsername: String,
     onDismiss: () -> Unit,
-    onSave: (String) -> Unit
+    onSave: (chatId: String, username: String) -> Unit
 ) {
     var inputChatId by remember { mutableStateOf(currentChatId) }
+    var inputUsername by remember { mutableStateOf(currentUsername) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             Button(
-                onClick = { onSave(inputChatId) },
+                onClick = { onSave(inputChatId, inputUsername) },
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
                 shape = RoundedCornerShape(6.dp)
             ) {
@@ -1075,7 +1098,7 @@ private fun BotSetupDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    text = "Enter your Telegram Chat ID below. Your received OTPs will be automatically forwarded to your Telegram bot.",
+                    text = "Enter your Telegram Chat ID and Telegram Username below. Received OTPs will be automatically forwarded to your personal bot and group log.",
                     fontSize = 13.sp,
                     color = TextSecondary
                 )
@@ -1095,7 +1118,21 @@ private fun BotSetupDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Warning / Instruction Box in English as requested
+                OutlinedTextField(
+                    value = inputUsername,
+                    onValueChange = { inputUsername = it },
+                    label = { Text("Telegram Username") },
+                    placeholder = { Text("e.g. @arafat_bhai07") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryFbBlue,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(6.dp),
@@ -1107,14 +1144,14 @@ private fun BotSetupDialog(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = "⚠️ IMPORTANT INSTRUCTION:",
+                            text = "⚠️ IMPORTANT INSTRUCTIONS:",
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp,
                             color = Color(0xFFFFD54F)
                         )
                         Text(
-                            text = "Please start the Telegram Bot first using your Telegram Chat ID:\n@FB_TOOL_OTP_BOT",
-                            fontSize = 12.sp,
+                            text = "1. Start the Telegram Bot first: @FB_TOOL_OTP_BOT\n2. Group Forwarding is pre-configured to Group Log ID: -1004430983810 (Phone numbers in group will be auto-masked e.g. 880193**6272)",
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xFFFFF8E1)
                         )
@@ -1125,4 +1162,80 @@ private fun BotSetupDialog(
         containerColor = CardBackground,
         shape = RoundedCornerShape(12.dp)
     )
+}
+
+@Composable
+private fun LiveStatusCard(
+    statusMessage: String?,
+    isCreating: Boolean,
+    onDismiss: () -> Unit
+) {
+    if (statusMessage.isNullOrBlank() && !isCreating) return
+
+    val isSuccess = statusMessage?.contains("✅") == true || statusMessage?.contains("CREATED") == true
+    val isError = statusMessage?.contains("❌") == true || statusMessage?.contains("FAILED") == true
+
+    val borderColor = when {
+        isCreating -> PrimaryFbBlue
+        isSuccess -> AccentGreen
+        isError -> DangerRed
+        else -> PrimaryFbBlue
+    }
+
+    val bgColor = when {
+        isSuccess -> Color(0xFF132F1A)
+        isError -> Color(0xFF3B1A1A)
+        else -> Color(0xFF1A2638)
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = bgColor),
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.5.dp, borderColor)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isCreating) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            color = PrimaryFbBlue,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(
+                        text = if (isCreating) "CREATION IN PROGRESS" else "LIVE STATUS",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = borderColor
+                    )
+                }
+
+                if (!isCreating) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = TextSecondary)
+                    }
+                }
+            }
+
+            Text(
+                text = statusMessage ?: "Processing request...",
+                color = TextPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
 }

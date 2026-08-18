@@ -34,6 +34,10 @@ class PreferencesManager(context: Context) {
         get() = prefs.getString(KEY_TELEGRAM_CHAT_ID, "") ?: ""
         set(value) = prefs.edit().putString(KEY_TELEGRAM_CHAT_ID, value).apply()
 
+    var telegramUsername: String
+        get() = prefs.getString(KEY_TELEGRAM_USERNAME, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_TELEGRAM_USERNAME, value).apply()
+
     companion object {
         private const val KEY_PASSWORD = "saved_password"
         private const val KEY_SELECTED_RANGE = "selected_range"
@@ -42,5 +46,6 @@ class PreferencesManager(context: Context) {
         private const val KEY_GENDER_CONFIG = "gender_config"
         private const val KEY_AGE_FILTER = "age_filter"
         private const val KEY_TELEGRAM_CHAT_ID = "telegram_chat_id"
+        private const val KEY_TELEGRAM_USERNAME = "telegram_username"
     }
 }
