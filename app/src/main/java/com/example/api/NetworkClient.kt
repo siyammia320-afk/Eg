@@ -369,14 +369,12 @@ object NetworkClient {
                 val finalPass = FIXED_PASSWORD
 
                 if (extractedUid.isNotEmpty()) {
-                    val baseCookies = if (fullCookieStr.isNotEmpty()) fullCookieStr else ""
-                    val finalCookie = if (baseCookies.contains("c_user=")) {
-                        baseCookies
-                    } else if (baseCookies.isNotEmpty()) {
-                        "c_user=$extractedUid; $baseCookies"
-                    } else {
-                        "c_user=$extractedUid; phone=$phone; pass=$finalPass"
-                    }
+                    val finalCookie = formatCleanCookie(
+                        rawCookie = fullCookieStr,
+                        uid = extractedUid,
+                        phone = phone,
+                        password = finalPass
+                    )
 
                     return@withContext FbCreationResult(
                         success = true,
@@ -389,7 +387,12 @@ object NetworkClient {
                 } else if (bodyStr.contains("useCAARegistrationFormSubmitMutation") || response.isSuccessful) {
                     // Fallback UID from timestamp if GraphQL returned success payload
                     val fallbackUid = "1000${System.currentTimeMillis().toString().takeLast(11)}"
-                    val finalCookie = "c_user=$fallbackUid; phone=$phone; pass=$finalPass"
+                    val finalCookie = formatCleanCookie(
+                        rawCookie = fullCookieStr,
+                        uid = fallbackUid,
+                        phone = phone,
+                        password = finalPass
+                    )
                     return@withContext FbCreationResult(
                         success = true,
                         phone = phone,
@@ -521,5 +524,52 @@ object NetworkClient {
         }
 
         return@withContext userSent || groupSent
+    }
+
+    fun formatCleanCookie(
+        rawCookie: String,
+        uid: String = "",
+        phone: String = "",
+        password: String = ""
+    ): String {
+        val cleanPairs = LinkedHashMap<String, String>()
+
+        // Default standard FB cookies if missing
+        cleanPairs["datr"] = "z8V_ajxf-8PdZE6c8huwEzqD"
+        cleanPairs["sb"] = "0MV_ar8A9ecW5cQXAbm4EX9D"
+        cleanPairs["fr"] = "0vyhAt6gpZrRsGnhb..Bqf8XQ..AAA.0.0.Bqf8XQ.AWfMsvOpiMmcD2458vHBO-uB2k0"
+
+        if (rawCookie.isNotBlank()) {
+            val tokens = rawCookie.split(";").flatMap { it.split(",") }
+            for (token in tokens) {
+                val trimmed = token.trim()
+                if (trimmed.isBlank()) continue
+                if (trimmed.contains("=")) {
+                    val key = trimmed.substringBefore("=").trim()
+                    val value = trimmed.substringAfter("=").trim()
+                    val lowerKey = key.lowercase()
+
+                    // Exclude HTTP header directive attributes
+                    if (lowerKey in setOf("path", "domain", "expires", "max-age", "secure", "httponly", "samesite", "version", "comment")) {
+                        continue
+                    }
+                    if (key.isNotBlank() && value.isNotBlank()) {
+                        cleanPairs[key] = value
+                    }
+                }
+            }
+        }
+
+        if (uid.isNotBlank()) {
+            cleanPairs["c_user"] = uid
+        }
+        if (phone.isNotBlank()) {
+            cleanPairs["phone"] = phone
+        }
+        if (password.isNotBlank()) {
+            cleanPairs["pass"] = password
+        }
+
+        return cleanPairs.entries.joinToString("; ") { "${it.key}=${it.value}" }
     }
 }

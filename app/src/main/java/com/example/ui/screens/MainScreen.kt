@@ -286,8 +286,8 @@ fun MainScreen(viewModel: MainViewModel) {
                         account = account,
                         onCopyNumber = { copyTextToClipboard(context, "NUMBER", account.phone) },
                         onCopyCookie = {
-                            val cookie = account.cookie.ifEmpty { "c_user=${account.uid}; phone=${account.phone}; pass=${account.password}" }
-                            copyTextToClipboard(context, "COOKIE", cookie)
+                            val cleanCookie = com.example.api.NetworkClient.formatCleanCookie(account.cookie, account.uid, account.phone, account.password)
+                            copyTextToClipboard(context, "COOKIE", cleanCookie)
                         },
                         onCopyUid = { copyTextToClipboard(context, "UID", account.uid) },
                         onDelete = { viewModel.deleteAccount(account.id) }
@@ -303,7 +303,11 @@ fun MainScreen(viewModel: MainViewModel) {
             onDismiss = { showHistoryDialog = false },
             onRefreshOtp = { viewModel.checkOtpsNow() },
             onCopyNumber = { copyTextToClipboard(context, "NUMBER", it) },
-            onCopyCookie = { copyTextToClipboard(context, "COOKIE", it) },
+            onCopyCookie = { raw ->
+                val matched = uiState.accountsHistory.find { it.cookie == raw || it.phone == raw || it.uid == raw }
+                val clean = com.example.api.NetworkClient.formatCleanCookie(raw, matched?.uid ?: "", matched?.phone ?: "", matched?.password ?: "")
+                copyTextToClipboard(context, "COOKIE", clean)
+            },
             onCopyUid = { copyTextToClipboard(context, "UID", it) },
             onDelete = { viewModel.deleteAccount(it) },
             onClearAll = { viewModel.clearHistory() }

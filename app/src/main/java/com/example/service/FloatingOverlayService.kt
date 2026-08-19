@@ -503,7 +503,12 @@ class FloatingOverlayService : Service() {
                 background = bg
                 layoutParams = btnParams
                 setOnClickListener {
-                    val cookieStr = account.cookie.ifEmpty { "c_user=${account.uid}; phone=${account.phone}; pass=${account.password}" }
+                    val cookieStr = com.example.api.NetworkClient.formatCleanCookie(
+                        rawCookie = account.cookie,
+                        uid = account.uid,
+                        phone = account.phone,
+                        password = account.password
+                    )
                     copyToClipboard("COOKIE", cookieStr)
                 }
             }

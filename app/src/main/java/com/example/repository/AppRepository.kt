@@ -63,8 +63,18 @@ class AppRepository(context: Context) {
         return NetworkClient.sendTelegramOtpForwarding(chatId, username, number, otp, rawMessage)
     }
 
-    private val activeNumbers = java.util.Collections.synchronizedSet(mutableSetOf<String>())
-    private val processedOtps = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    companion object {
+        private val activeNumbers = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+        private val processedOtps = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+        private val otpLock = Any()
+    }
+
+    init {
+        val storedKeys = prefs.getProcessedOtpKeys()
+        if (storedKeys.isNotEmpty()) {
+            processedOtps.addAll(storedKeys)
+        }
+    }
 
     fun registerActiveNumber(phone: String) {
         val clean = phone.replace(Regex("[^0-9]"), "")
@@ -144,9 +154,17 @@ class AppRepository(context: Context) {
 
             if (matchingUserPhone != null) {
                 val uniqueKey = "${cleanOtpPhone}_${otp.otpCode}"
-                if (!processedOtps.contains(uniqueKey)) {
-                    processedOtps.add(uniqueKey)
+                var isNewOtp = false
 
+                synchronized(otpLock) {
+                    if (!processedOtps.contains(uniqueKey)) {
+                        processedOtps.add(uniqueKey)
+                        prefs.saveProcessedOtpKey(uniqueKey)
+                        isNewOtp = true
+                    }
+                }
+
+                if (isNewOtp) {
                     // Update account DB if account exists
                     for (account in allAccounts) {
                         val cleanAccPhone = account.phone.replace(Regex("[^0-9]"), "")
@@ -155,7 +173,7 @@ class AppRepository(context: Context) {
                         }
                     }
 
-                    // Auto forward to Telegram if Chat ID configured
+                    // Auto forward to Telegram ONCE
                     sendTelegramOtp(otp.number, otp.otpCode, otp.rawMessage)
 
                     matchedOtps.add(otp)

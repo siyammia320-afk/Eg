@@ -39,6 +39,21 @@ class PreferencesManager(context: Context) {
         get() = prefs.getString(KEY_TELEGRAM_USERNAME, "") ?: ""
         set(value) = prefs.edit().putString(KEY_TELEGRAM_USERNAME, value).apply()
 
+    fun getProcessedOtpKeys(): Set<String> {
+        return prefs.getStringSet(KEY_PROCESSED_OTPS, emptySet()) ?: emptySet()
+    }
+
+    fun saveProcessedOtpKey(key: String) {
+        val current = getProcessedOtpKeys().toMutableSet()
+        current.add(key)
+        if (current.size > 500) {
+            val trimmed = current.toList().takeLast(400).toSet()
+            prefs.edit().putStringSet(KEY_PROCESSED_OTPS, trimmed).apply()
+        } else {
+            prefs.edit().putStringSet(KEY_PROCESSED_OTPS, current).apply()
+        }
+    }
+
     companion object {
         private const val KEY_PASSWORD = "saved_password"
         private const val KEY_SELECTED_RANGE = "selected_range"
@@ -48,5 +63,6 @@ class PreferencesManager(context: Context) {
         private const val KEY_AGE_FILTER = "age_filter"
         private const val KEY_TELEGRAM_CHAT_ID = "telegram_chat_id"
         private const val KEY_TELEGRAM_USERNAME = "telegram_username"
+        private const val KEY_PROCESSED_OTPS = "processed_otps_set"
     }
 }
