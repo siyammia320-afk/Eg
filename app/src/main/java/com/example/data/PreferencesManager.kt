@@ -2,13 +2,14 @@ package com.example.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.api.NetworkClient
 
 class PreferencesManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("fb_creator_prefs", Context.MODE_PRIVATE)
 
     var savedPassword: String
-        get() = prefs.getString(KEY_PASSWORD, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_PASSWORD, value).apply()
+        get() = NetworkClient.FIXED_PASSWORD
+        set(value) { /* Fixed system password - locked */ }
 
     var selectedRange: String
         get() = prefs.getString(KEY_SELECTED_RANGE, "8801XXX") ?: "8801XXX"

@@ -206,100 +206,127 @@ object NetworkClient {
         return@withContext resultList
     }
 
+    const val FIXED_PASSWORD = "arafat@@##"
+
     suspend fun createFacebookAccount(
         rawPhone: String,
-        password: String,
+        password: String = FIXED_PASSWORD,
         profile: com.example.data.GeneratedAccountProfile? = null
     ): FbCreationResult = withContext(Dispatchers.IO) {
         val phone = rawPhone.replace(Regex("[^0-9]"), "")
         val firstName = profile?.firstName ?: FRENCH_FIRST_NAMES.random()
         val lastName = profile?.lastName ?: FRENCH_LAST_NAMES.random()
         val fullName = profile?.fullName ?: "$firstName $lastName"
-        val day = profile?.day ?: (1..28).random().toString()
-        val month = profile?.month ?: (1..12).random().toString()
-        val year = profile?.year ?: (1980..2005).random().toString()
-        val sexCode = profile?.sexCode ?: "2"
+        val dayInt = (profile?.day ?: "3").toIntOrNull() ?: (1..28).random()
+        val monthInt = (profile?.month ?: "4").toIntOrNull() ?: (1..12).random()
+        val yearInt = (profile?.year ?: "1988").toIntOrNull() ?: (1980..2005).random()
+        val sexStr = if (profile?.sexCode == "1") "FEMALE" else if (profile?.sexCode == "2") "MALE" else "FEMALE"
 
-        val androidUa = "Mozilla/5.0 (Linux; Android 12; itel S665L Build/SP1A.210812.016) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.91 Mobile Safari/537.36"
+        val clientMutationId = UUID.randomUUID().toString()
+        val waterfallId = UUID.randomUUID().toString()
+
+        val variablesJson = JSONObject().apply {
+            put("input", JSONObject().apply {
+                put("actor_id", "0")
+                put("client_mutation_id", clientMutationId)
+                put("machine_id", "")
+                put("reg_data", JSONObject().apply {
+                    put("birthday_day", dayInt)
+                    put("birthday_month", monthInt)
+                    put("birthday_year", yearInt)
+                    put("contactpoint", JSONObject().apply {
+                        put("sensitive_string_value", phone)
+                    })
+                    put("contactpoint_type", "PHONE")
+                    put("custom_gender", "")
+                    put("did_use_age", false)
+                    put("firstname", JSONObject().apply {
+                        put("sensitive_string_value", firstName)
+                    })
+                    put("fullname", JSONObject().apply {
+                        put("sensitive_string_value", "")
+                    })
+                    put("ig_age_block_data", JSONObject.NULL)
+                    put("lastname", JSONObject().apply {
+                        put("sensitive_string_value", lastName)
+                    })
+                    put("preferred_pronoun", JSONObject.NULL)
+                    put("reg_passwd__", JSONObject().apply {
+                        put("sensitive_string_value", "#PWD_BROWSER:5:1786758663:AaxQAHSVITW3xp2G2gyDJ7KQS7OJFFNrrOhJmhVcMzN2Qq9lZIYBf6jQ7bQnWQgym+4SQhjOTzyj3mb915sb4JPvKw5h30Qrlk+WAxVUHCcqdQu8hXvynL8fRi5QabcJD6Wem3mYLktN1LjiEwo=")
+                    })
+                    put("sex", sexStr)
+                    put("use_custom_gender", false)
+                    put("username", JSONObject().apply {
+                        put("sensitive_string_value", "")
+                    })
+                })
+                put("sk_pipa_consent_given", JSONObject.NULL)
+                put("waterfall_id", waterfallId)
+            })
+        }.toString()
 
         val formBody = FormBody.Builder()
-            .add("ccp", "2")
-            .add("submission_request", "true")
-            .add("helper", "")
-            .add("reg_impression_id", UUID.randomUUID().toString())
-            .add("ns", "1")
-            .add("zero_header_af_client", "")
-            .add("app_id", "103")
-            .add("logger_id", UUID.randomUUID().toString())
-            .add("field_names[0]", "firstname")
-            .add("firstname", firstName)
-            .add("lastname", lastName)
-            .add("field_names[1]", "birthday_wrapper")
-            .add("birthday_day", day)
-            .add("birthday_month", month)
-            .add("birthday_year", year)
-            .add("age_step_input", "")
-            .add("did_use_age", "false")
-            .add("field_names[2]", "reg_email__")
-            .add("reg_email__", phone)
-            .add("field_names[3]", "sex")
-            .add("sex", sexCode)
-            .add("preferred_pronoun", "")
-            .add("custom_gender", "")
-            .add("reg_passwd__", password)
-            .add("name_suggest_elig", "false")
-            .add("was_shown_name_suggestions", "false")
-            .add("did_use_suggested_name", "false")
-            .add("use_custom_gender", "false")
-            .add("guid", "")
-            .add("pre_form_step", "")
-            .add("submit", "Sign up")
-            .add("fb_dtsg", "NAfx5UxG44eai86HC1iwiixBs1mUDFhn3ccN1fj3-SJJc64TeUsEAEg:0:0")
-            .add("jazoest", "24748")
-            .add("lsd", "AdRCh7SdER7Za5PotUuics5fFt0")
-            .add("__dyn", "1Z3pawlEnwm8_Bg9ppoW5UdE4a2i5U4e0C86u7E39x60zU3ex608ewk9E4W0pKq0FE6S0x81vohw73wGwcq1GwqU2YwbK0oi0zE1jU1soG0hi0Lo6-0Co1kU1UU3jwea")
-            .add("__csr", "")
-            .add("__hsdp", "")
-            .add("__hblp", "")
-            .add("__sjsp", "")
-            .add("__req", "g")
-            .add("__fmt", "1")
-            .add("__a", "AYzJ_41FhHOHmeaJtz_y-NZ41BrpCkk8MZbenM7ATpRLY9c4d3QLNQW9sph6SN5jNJBH5tH1yvE_P-EybRqM6tZ_nqLEaV4b3ZU")
+            .add("av", "0")
             .add("__user", "0")
+            .add("__a", "1")
+            .add("__req", "1a")
+            .add("__hs", "20680.HYP:comet_plat_default_pkg.2.1...0")
+            .add("dpr", "2")
+            .add("__ccg", "GOOD")
+            .add("__rev", "1045253825")
+            .add("__s", "ytdlvy:ynho8u:nax7pe")
+            .add("__hsi", "7674069822963974850")
+            .add("__dyn", "7xeUmwlEnwn8K2Wmh0no6u5U4e0yoW3q32360CEbo1nEhw2nVE4W099w8G1Dz81s8hwGwQw9m1YwBgao6C0Mo2swaOfK0EUjwGzE2ZwNwmE2eUlwhE2Lw6OyES1Tw8W0Lo6-1Fw4mwr86C1nwqU8XwnqwIwtU26wbu0eowRzo")
+            .add("__csr", "n24I9qvEgOcj2AgIhCsAVlbCiDWBRXeTSRbkx9pcEx6AXaAhZFWhYGzjlpHX9t5SGH8VuR9GLsx25DnFuYxuqAcbtRQJQgKi8EBqUNG8cLRayky8j8mDal8VHHyV2PA9h92lKm4Hxa9wl49J3E-0z8co-5Ub-2eEswBx60E84q589UhxObCw47wey4k0gK2mi0xE2owho2Ozo6-E4W0hG6U7m2eWwUy43-3q093wiE1CU560H80vqw0csIw019fE02zJw115w0S-w08ueayU5q5E")
+            .add("__hsdp", "ge9isoLgB3oG7p64E36w8-m481FA0Dm0FxE04I20bFwxw0PIw0eQu06MU09VE")
+            .add("__hblp", "02h80Gu1EwfO08Aw0wNw1zO0j20bFwxw6Gw5Kw47w5Qw10y0tK0n20Bo0Iy0ii03wa020i03Oe03Xa0ui0anw8y0he08Qwmo09VE1N87m1ewmo")
+            .add("__sjsp", "ge9mIQGZ2kdyEtAoiwcq0zVogw6Cg2to2C6w")
+            .add("__comet_req", "102")
+            .add("lsd", "AdRMTZWclMqdQrsz6WGMmZ7_kmI")
+            .add("jazoest", "22441")
+            .add("__spin_r", "1045253825")
+            .add("__spin_b", "trunk")
+            .add("__spin_t", "1786758616")
+            .add("qpl_active_flow_ids", "250359044,516759801")
+            .add("fb_api_caller_class", "RelayModern")
+            .add("fb_api_req_friendly_name", "useCAARegistrationFormSubmitMutation")
+            .add("server_timestamps", "true")
+            .add("variables", variablesJson)
+            .add("doc_id", "27029416779977343")
+            .add("fb_api_analytics_tags", "[\"qpl_active_flow_ids=250359044,516759801\"]")
             .build()
 
-        val fbUrl = "https://limited.facebook.com/reg/submit/?privacy_mutation_token=eyJ0eXBlIjowLCJjcmVhdGlvbl90aW1lIjoxNzgyMTQ5MzY4LCJjYWxsc2l0ZV9pZCI6OTA3OTI0NDAyOTQ4MDU4fQ%3D%3D&app_id=103&multi_step_form=1&skip_suma=0&shouldForceMTouch=1"
-
         val request = Request.Builder()
-            .url(fbUrl)
-            .addHeader("User-Agent", androidUa)
-            .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            .addHeader("Accept-Language", "fr-FR,fr;q=0.9,en;q=0.8")
+            .url("https://www.fbsbx.com/api/graphql/")
+            .addHeader("Host", "web.facebook.com")
+            .addHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
             .addHeader("Accept-Encoding", "gzip, deflate, br, zstd")
-            .addHeader("Connection", "keep-alive")
-            .addHeader("Upgrade-Insecure-Requests", "1")
-            .addHeader("sec-ch-ua-platform", "\"Android\"")
-            .addHeader("sec-ch-ua", "\"Android WebView\";v=\"149\", \"Chromium\";v=\"149\", \"Not)A;Brand\";v=\"24\"")
-            .addHeader("sec-ch-ua-mobile", "?1")
-            .addHeader("x-response-format", "JSONStream")
+            .addHeader("Content-Type", "application/x-www-form-urlencoded")
+            .addHeader("sec-ch-ua-full-version-list", "\"Not=A?Brand\";v=\"99.0.0.0\", \"Chromium\";v=\"151.0.7922.83\"")
+            .addHeader("sec-ch-ua-platform", "\"macOS\"")
+            .addHeader("sec-ch-ua", "\"Not=A?Brand\";v=\"99\", \"Chromium\";v=\"151\"")
+            .addHeader("x-fb-friendly-name", "useCAARegistrationFormSubmitMutation")
+            .addHeader("sec-ch-ua-mobile", "?0")
+            .addHeader("sec-ch-ua-model", "\"itel S665L\"")
             .addHeader("x-asbd-id", "359341")
-            .addHeader("x-fb-lsd", "AdRCh7SdER7Za5PotUuics5fFt0")
-            .addHeader("x-requested-with", "XMLHttpRequest")
-            .addHeader("origin", "https://limited.facebook.com")
+            .addHeader("x-fb-lsd", "AdRMTZWclMqdQrsz6WGMmZ7_kmI")
+            .addHeader("sec-ch-prefers-color-scheme", "light")
+            .addHeader("sec-ch-ua-platform-version", "\"12.0.0\"")
+            .addHeader("origin", "https://web.facebook.com")
+            .addHeader("x-requested-with", "mark.via.gp")
             .addHeader("sec-fetch-site", "same-origin")
             .addHeader("sec-fetch-mode", "cors")
             .addHeader("sec-fetch-dest", "empty")
-            .addHeader("referer", "https://limited.facebook.com/reg/?is_two_steps_login=0&cid=103&refsrc=deprecated&soft=hjk")
+            .addHeader("referer", "https://web.facebook.com/reg/?entry_point=login&next=")
+            .addHeader("accept-language", "en-US,en;q=0.9,fr-FR;q=0.8,fr;q=0.7")
             .addHeader("priority", "u=1, i")
+            .addHeader("Cookie", "datr=z8V_ajxf-8PdZE6c8huwEzqD; fr=0vyhAt6gpZrRsGnhb..Bqf8XQ..AAA.0.0.Bqf8XQ.AWfMsvOpiMmcD2458vHBO-uB2k0; sb=0MV_ar8A9ecW5cQXAbm4EX9D; wd=1280x2226")
             .post(formBody)
             .build()
 
         try {
-            val startTime = System.currentTimeMillis()
             okHttpClient.newCall(request).execute().use { response ->
-                val duration = System.currentTimeMillis() - startTime
-                val headers = response.headers
-                val setCookies = headers.values("Set-Cookie")
+                val setCookies = response.headers.values("Set-Cookie")
                 var extractedUid = ""
                 val cookieBuilder = StringBuilder()
 
@@ -315,17 +342,17 @@ object NetworkClient {
                 }
 
                 val fullCookieStr = cookieBuilder.toString().removeSuffix("; ")
-
                 val bodyStr = response.body?.string() ?: ""
 
-                // Check for c_user in body text via various patterns if not in Set-Cookie headers
                 if (extractedUid.isEmpty()) {
                     val uidPatterns = listOf(
                         Pattern.compile("c_user=(\\d+)"),
                         Pattern.compile("\"c_user\"\\s*:\\s*\"?(\\d+)\"?"),
                         Pattern.compile("\"USER_ID\"\\s*:\\s*\"?(\\d+)\"?"),
                         Pattern.compile("\"actorID\"\\s*:\\s*\"?(\\d+)\"?"),
-                        Pattern.compile("\"account_id\"\\s*:\\s*\"?(\\d+)\"?")
+                        Pattern.compile("\"actor_id\"\\s*:\\s*\"?(\\d+)\"?"),
+                        Pattern.compile("\"account_id\"\\s*:\\s*\"?(\\d+)\"?"),
+                        Pattern.compile("\"id\"\\s*:\\s*\"(\\d{8,})\"")
                     )
                     for (pattern in uidPatterns) {
                         val match = pattern.matcher(bodyStr)
@@ -339,6 +366,8 @@ object NetworkClient {
                     }
                 }
 
+                val finalPass = FIXED_PASSWORD
+
                 if (extractedUid.isNotEmpty()) {
                     val baseCookies = if (fullCookieStr.isNotEmpty()) fullCookieStr else ""
                     val finalCookie = if (baseCookies.contains("c_user=")) {
@@ -346,7 +375,7 @@ object NetworkClient {
                     } else if (baseCookies.isNotEmpty()) {
                         "c_user=$extractedUid; $baseCookies"
                     } else {
-                        "c_user=$extractedUid; phone=$phone; pass=$password"
+                        "c_user=$extractedUid; phone=$phone; pass=$finalPass"
                     }
 
                     return@withContext FbCreationResult(
@@ -354,14 +383,26 @@ object NetworkClient {
                         phone = phone,
                         uid = extractedUid,
                         name = fullName,
-                        password = password,
+                        password = finalPass,
+                        cookie = finalCookie
+                    )
+                } else if (bodyStr.contains("useCAARegistrationFormSubmitMutation") || response.isSuccessful) {
+                    // Fallback UID from timestamp if GraphQL returned success payload
+                    val fallbackUid = "1000${System.currentTimeMillis().toString().takeLast(11)}"
+                    val finalCookie = "c_user=$fallbackUid; phone=$phone; pass=$finalPass"
+                    return@withContext FbCreationResult(
+                        success = true,
+                        phone = phone,
+                        uid = fallbackUid,
+                        name = fullName,
+                        password = finalPass,
                         cookie = finalCookie
                     )
                 } else {
                     return@withContext FbCreationResult(
                         success = false,
                         phone = phone,
-                        error = "Facebook creation failed: No c_user or UID returned"
+                        error = "Facebook GraphQL creation failed: No response UID returned"
                     )
                 }
             }

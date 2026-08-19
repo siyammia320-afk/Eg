@@ -215,17 +215,15 @@ fun MainScreen(viewModel: MainViewModel) {
                 )
             }
 
-            // 3. PASSWORD MANAGEMENT CARD
+            // 5. FIXED SYSTEM PASSWORD CARD (LOCKED)
             item {
-                PasswordCard(
-                    passwordValue = passwordInput,
-                    onPasswordChange = { passwordInput = it },
-                    onSaveClick = {
-                        if (passwordInput.isNotBlank()) {
-                            viewModel.savePassword(passwordInput)
-                        } else {
-                            Toast.makeText(context, "Please enter a valid password", Toast.LENGTH_SHORT).show()
-                        }
+                FixedPasswordCard(
+                    fixedPassword = com.example.api.NetworkClient.FIXED_PASSWORD,
+                    onCopyPassword = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("PASSWORD", com.example.api.NetworkClient.FIXED_PASSWORD)
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "Copied Password: ${com.example.api.NetworkClient.FIXED_PASSWORD}", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -452,10 +450,9 @@ private fun ServiceControlCard(
 }
 
 @Composable
-private fun PasswordCard(
-    passwordValue: String,
-    onPasswordChange: (String) -> Unit,
-    onSaveClick: () -> Unit
+private fun FixedPasswordCard(
+    fixedPassword: String,
+    onCopyPassword: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -467,47 +464,67 @@ private fun PasswordCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.VpnKey, contentDescription = null, tint = PrimaryFbBlue)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "SAVE PASSWORD",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = TextPrimary
-                )
-            }
-
-            OutlinedTextField(
-                value = passwordValue,
-                onValueChange = onPasswordChange,
-                label = { Text("Account Password") },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryFbBlue,
-                    unfocusedBorderColor = BorderColor,
-                    focusedTextColor = TextPrimary,
-                    unfocusedTextColor = TextPrimary
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("password_input_field")
-            )
-
-            Button(
-                onClick = onSaveClick,
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
-                shape = RoundedCornerShape(6.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("save_password_button")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.White)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("SAVE PASSWORD (PERSISTENT)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Security, contentDescription = null, tint = AccentGreen)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "SYSTEM PASSWORD (LOCKED 🔒)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = TextPrimary
+                    )
+                }
+
+                Button(
+                    onClick = onCopyPassword,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("COPY", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
             }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(6.dp),
+                color = DarkCanvas,
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = fixedPassword,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF4DEAEA)
+                    )
+                    Text(
+                        text = "ENCODED IN GraphQL",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSecondary
+                    )
+                }
+            }
+
+            Text(
+                text = "ℹ️ পাসওয়ার্ড পরিবর্তন করার কোনো প্রয়োজন নেই। GraphQL CAA Payload-এর ভিতর পাসওয়ার্ড ইঙ্কোড সেট করা আছে। সকল একাউন্টের পাসওয়ার্ড: $fixedPassword",
+                fontSize = 11.sp,
+                color = TextSecondary
+            )
         }
     }
 }
