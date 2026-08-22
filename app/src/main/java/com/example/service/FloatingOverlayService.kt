@@ -47,7 +47,6 @@ class FloatingOverlayService : Service() {
 
     private var floatingButtonView: View? = null
     private var historyOverlayView: View? = null
-    private var igOverlayView: View? = null
 
     private var floatParams: WindowManager.LayoutParams? = null
 
@@ -55,14 +54,13 @@ class FloatingOverlayService : Service() {
     private var otpPollerJob: Job? = null
 
     private var currentAccountsList: List<AccountEntity> = emptyList()
-    private var currentMode: String = "FB"
+    private val currentMode: String = "FB"
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate() {
         super.onCreate()
         repository = AppRepository(this)
-        currentMode = repository.getFloatingMode()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
         startForegroundServiceNotification()
@@ -72,12 +70,6 @@ class FloatingOverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val newMode = intent?.getStringExtra("MODE") ?: repository.getFloatingMode()
-        if (newMode != currentMode) {
-            currentMode = newMode
-            repository.setFloatingMode(newMode)
-            updateFloatingButtonMode()
-        }
         repository.setServiceActive(true)
         return START_STICKY
     }
@@ -88,7 +80,6 @@ class FloatingOverlayService : Service() {
 
         removeFloatingButton()
         removeHistoryOverlay()
-        removeIgOverlay()
 
         super.onDestroy()
     }
@@ -176,13 +167,8 @@ class FloatingOverlayService : Service() {
 
         val longPressRunnable = Runnable {
             isLongPress = true
-            if (currentMode == "FB") {
-                showToast("Opening History...")
-                showHistoryOverlay()
-            } else {
-                showToast("Opening IG Creator...")
-                showIgOverlay()
-            }
+            showToast("Opening History...")
+            showHistoryOverlay()
         }
 
         container.setOnTouchListener { _, event ->
@@ -216,11 +202,7 @@ class FloatingOverlayService : Service() {
                     val dx = abs(event.rawX - initialTouchX)
                     val dy = abs(event.rawY - initialTouchY)
                     if (!isLongPress && dx < 10 && dy < 10) {
-                        if (currentMode == "FB") {
-                            triggerCreateAccount()
-                        } else {
-                            showIgOverlay()
-                        }
+                        triggerCreateAccount()
                     }
                     true
                 }
@@ -241,36 +223,13 @@ class FloatingOverlayService : Service() {
 
     private fun applyFloatingButtonStyle(container: LinearLayout, textView: TextView) {
         val density = resources.displayMetrics.density
-        if (currentMode == "FB") {
-            val shape = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#1877F2")) // FB Blue
-                setStroke((2 * density).toInt(), Color.WHITE)
-            }
-            container.background = shape
-            textView.text = "FB"
-        } else {
-            val shape = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(
-                    Color.parseColor("#833AB4"), // Purple
-                    Color.parseColor("#FD1D1D"), // Red
-                    Color.parseColor("#FCAF45")  // Orange
-                )
-            ).apply {
-                shape = GradientDrawable.OVAL
-                setStroke((2 * density).toInt(), Color.WHITE)
-            }
-            container.background = shape
-            textView.text = "IG"
+        val shape = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor("#1877F2")) // FB Blue
+            setStroke((2 * density).toInt(), Color.WHITE)
         }
-    }
-
-    private fun updateFloatingButtonMode() {
-        val container = floatingButtonView as? LinearLayout ?: return
-        val textView = container.getChildAt(0) as? TextView ?: return
-        applyFloatingButtonStyle(container, textView)
-        showToast("Switched to $currentMode Floating Mode")
+        container.background = shape
+        textView.text = "FB"
     }
 
     private val isCreatingInService = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -324,312 +283,7 @@ class FloatingOverlayService : Service() {
         }
     }
 
-    // ============================================================
-    // IG FLOATING OVERLAY PANEL (Country Setup, Number, User, Random, Create -> "সাকসেস")
-    // ============================================================
-    private fun showIgOverlay() {
-        if (igOverlayView != null) {
-            removeIgOverlay()
-        }
 
-        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
-
-        val displayMetrics = resources.displayMetrics
-        val width = (displayMetrics.widthPixels * 0.92).toInt()
-
-        val dialogParams = WindowManager.LayoutParams(
-            width,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.CENTER
-        }
-
-        val density = displayMetrics.density
-
-        val rootLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val bg = GradientDrawable().apply {
-                setColor(Color.parseColor("#1A162B")) // Dark IG canvas
-                cornerRadius = 12 * density
-                setStroke((1.5f * density).toInt(), Color.parseColor("#833AB4"))
-            }
-            background = bg
-            setPadding((16 * density).toInt(), (16 * density).toInt(), (16 * density).toInt(), (16 * density).toInt())
-        }
-
-        // Header Row
-        val headerLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, (8 * density).toInt())
-        }
-
-        val titleText = TextView(this).apply {
-            text = "📸 IG CREATOR (Meta)"
-            setTextColor(Color.WHITE)
-            textSize = 15f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-
-        val closeBtn = Button(this).apply {
-            text = "✕"
-            setTextColor(Color.parseColor("#FF5252"))
-            setBackgroundColor(Color.TRANSPARENT)
-            textSize = 18f
-            setOnClickListener { removeIgOverlay() }
-        }
-
-        headerLayout.addView(titleText)
-        headerLayout.addView(closeBtn)
-        rootLayout.addView(headerLayout)
-
-        // 1. Country Selection Row: BD, MG, SL, US
-        val countryLabel = TextView(this).apply {
-            text = "Country (দেশ নির্বাচন করুন):"
-            setTextColor(Color.parseColor("#B0BEC5"))
-            textSize = 12f
-            setPadding(0, (4 * density).toInt(), 0, (4 * density).toInt())
-        }
-        rootLayout.addView(countryLabel)
-
-        var selectedCountry = repository.getIgCountry()
-        val countryRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, (8 * density).toInt())
-        }
-
-        val countryButtons = mutableListOf<Button>()
-        val countries = listOf("BD" to "🇧🇩 BD", "MG" to "🇲🇬 MG", "SL" to "🇱🇰 SL", "US" to "🇺🇸 US")
-
-        // Helper to refresh country button colors
-        fun updateCountryButtons() {
-            for ((idx, btn) in countryButtons.withIndex()) {
-                val code = countries[idx].first
-                val isSel = code == selectedCountry
-                val btnBg = GradientDrawable().apply {
-                    setColor(if (isSel) Color.parseColor("#E1306C") else Color.parseColor("#2A2440"))
-                    cornerRadius = 6 * density
-                }
-                btn.background = btnBg
-                btn.setTextColor(Color.WHITE)
-            }
-        }
-
-        // Forward declaration of fields for random generator
-        val phoneInput = EditText(this).apply {
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            textSize = 13f
-            hint = "Phone Number (+880...)"
-            val bg = GradientDrawable().apply {
-                setColor(Color.parseColor("#25203A"))
-                cornerRadius = 6 * density
-                setStroke((1 * density).toInt(), Color.parseColor("#4A3F69"))
-            }
-            background = bg
-            setPadding((12 * density).toInt(), (10 * density).toInt(), (12 * density).toInt(), (10 * density).toInt())
-            setText(repository.generateRandomPhone(selectedCountry))
-        }
-
-        val userInput = EditText(this).apply {
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            textSize = 13f
-            hint = "Username (e.g. user_name_123)"
-            val bg = GradientDrawable().apply {
-                setColor(Color.parseColor("#25203A"))
-                cornerRadius = 6 * density
-                setStroke((1 * density).toInt(), Color.parseColor("#4A3F69"))
-            }
-            background = bg
-            setPadding((12 * density).toInt(), (10 * density).toInt(), (12 * density).toInt(), (10 * density).toInt())
-            setText(repository.generateRandomIgUsername())
-        }
-
-        val nameInput = EditText(this).apply {
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            textSize = 13f
-            hint = "Display Name"
-            val bg = GradientDrawable().apply {
-                setColor(Color.parseColor("#25203A"))
-                cornerRadius = 6 * density
-                setStroke((1 * density).toInt(), Color.parseColor("#4A3F69"))
-            }
-            background = bg
-            setPadding((12 * density).toInt(), (10 * density).toInt(), (12 * density).toInt(), (10 * density).toInt())
-            setText("Arafat")
-        }
-
-        for (item in countries) {
-            val cBtn = Button(this).apply {
-                text = item.second
-                textSize = 11f
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
-                layoutParams = LinearLayout.LayoutParams(0, (36 * density).toInt(), 1f).apply {
-                    setMargins((2 * density).toInt(), 0, (2 * density).toInt(), 0)
-                }
-                setOnClickListener {
-                    selectedCountry = item.first
-                    repository.setIgCountry(selectedCountry)
-                    updateCountryButtons()
-                    phoneInput.setText(repository.generateRandomPhone(selectedCountry))
-                }
-            }
-            countryButtons.add(cBtn)
-            countryRow.addView(cBtn)
-        }
-        updateCountryButtons()
-        rootLayout.addView(countryRow)
-
-        // 2. Phone Number input
-        val phoneLabel = TextView(this).apply {
-            text = "Number (নাম্বার বসান):"
-            setTextColor(Color.parseColor("#B0BEC5"))
-            textSize = 12f
-            setPadding(0, (4 * density).toInt(), 0, (2 * density).toInt())
-        }
-        rootLayout.addView(phoneLabel)
-        rootLayout.addView(phoneInput)
-
-        // 3. Username input
-        val userLabel = TextView(this).apply {
-            text = "Username (ইউজারনেম):"
-            setTextColor(Color.parseColor("#B0BEC5"))
-            textSize = 12f
-            setPadding(0, (6 * density).toInt(), 0, (2 * density).toInt())
-        }
-        rootLayout.addView(userLabel)
-        rootLayout.addView(userInput)
-
-        // 4. Action Buttons Row: [ 🎲 RANDOM ] and [ ⚡ CREATE ]
-        val actionsRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, (10 * density).toInt(), 0, (6 * density).toInt())
-        }
-
-        val randomBtn = Button(this).apply {
-            text = "🎲 RANDOM"
-            setTextColor(Color.WHITE)
-            textSize = 12f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            val bg = GradientDrawable().apply {
-                setColor(Color.parseColor("#5E35B1"))
-                cornerRadius = 6 * density
-            }
-            background = bg
-            layoutParams = LinearLayout.LayoutParams(0, (44 * density).toInt(), 1f).apply {
-                setMargins(0, 0, (4 * density).toInt(), 0)
-            }
-            setOnClickListener {
-                userInput.setText(repository.generateRandomIgUsername())
-                phoneInput.setText(repository.generateRandomPhone(selectedCountry))
-                showToast("🎲 Generated Random User & Number")
-            }
-        }
-
-        val statusBox = TextView(this).apply {
-            visibility = View.GONE
-            textSize = 16f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setPadding((8 * density).toInt(), (8 * density).toInt(), (8 * density).toInt(), (8 * density).toInt())
-        }
-
-        val createBtn = Button(this).apply {
-            text = "⚡ CREATE"
-            setTextColor(Color.WHITE)
-            textSize = 12f
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            val bg = GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(Color.parseColor("#833AB4"), Color.parseColor("#FD1D1D"), Color.parseColor("#FCAF45"))
-            ).apply {
-                cornerRadius = 6 * density
-            }
-            background = bg
-            layoutParams = LinearLayout.LayoutParams(0, (44 * density).toInt(), 1.2f).apply {
-                setMargins((4 * density).toInt(), 0, 0, 0)
-            }
-            setOnClickListener {
-                val phone = phoneInput.text.toString().trim()
-                val user = userInput.text.toString().trim()
-                val disp = nameInput.text.toString().trim()
-
-                if (phone.isBlank()) {
-                    showToast("❌ Enter phone number!")
-                    return@setOnClickListener
-                }
-                if (user.isBlank()) {
-                    showToast("❌ Enter username!")
-                    return@setOnClickListener
-                }
-
-                statusBox.visibility = View.VISIBLE
-                statusBox.text = "⏳ Creating..."
-                statusBox.setTextColor(Color.YELLOW)
-                isEnabled = false
-
-                serviceScope.launch {
-                    val result = repository.createIgAccount(
-                        phone = phone,
-                        username = user,
-                        displayName = disp,
-                        countryCode = selectedCountry
-                    )
-
-                    withContext(Dispatchers.Main) {
-                        isEnabled = true
-                        if (result.success) {
-                            // As explicitly requested: strictly show "সাকসেস" only!
-                            statusBox.text = "✅ সাকসেস"
-                            statusBox.setTextColor(Color.parseColor("#00E676")) // Bright Green
-                            showToast("✅ সাকসেস")
-                        } else {
-                            statusBox.text = "❌ ${result.error.ifBlank { "Creation Failed" }}"
-                            statusBox.setTextColor(Color.parseColor("#FF5252"))
-                            showToast("❌ ${result.error}")
-                        }
-                    }
-                }
-            }
-        }
-
-        actionsRow.addView(randomBtn)
-        actionsRow.addView(createBtn)
-        rootLayout.addView(actionsRow)
-
-        // 5. Success / Status Banner
-        rootLayout.addView(statusBox)
-
-        igOverlayView = rootLayout
-
-        try {
-            windowManager.addView(igOverlayView, dialogParams)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun removeIgOverlay() {
-        if (igOverlayView != null) {
-            try {
-                windowManager.removeView(igOverlayView)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            igOverlayView = null
-        }
-    }
 
     private fun showHistoryOverlay() {
         if (historyOverlayView != null) {
