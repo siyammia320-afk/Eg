@@ -39,6 +39,14 @@ class PreferencesManager(context: Context) {
         get() = prefs.getString(KEY_TELEGRAM_USERNAME, "") ?: ""
         set(value) = prefs.edit().putString(KEY_TELEGRAM_USERNAME, value).apply()
 
+    var floatingMode: String
+        get() = prefs.getString(KEY_FLOATING_MODE, "FB") ?: "FB"
+        set(value) = prefs.edit().putString(KEY_FLOATING_MODE, value).apply()
+
+    var igSelectedCountry: String
+        get() = prefs.getString(KEY_IG_COUNTRY, "BD") ?: "BD"
+        set(value) = prefs.edit().putString(KEY_IG_COUNTRY, value).apply()
+
     fun getProcessedOtpKeys(): Set<String> {
         return prefs.getStringSet(KEY_PROCESSED_OTPS, emptySet()) ?: emptySet()
     }
@@ -63,6 +71,8 @@ class PreferencesManager(context: Context) {
         private const val KEY_AGE_FILTER = "age_filter"
         private const val KEY_TELEGRAM_CHAT_ID = "telegram_chat_id"
         private const val KEY_TELEGRAM_USERNAME = "telegram_username"
+        private const val KEY_FLOATING_MODE = "floating_mode"
+        private const val KEY_IG_COUNTRY = "ig_country"
         private const val KEY_PROCESSED_OTPS = "processed_otps_set"
     }
 }

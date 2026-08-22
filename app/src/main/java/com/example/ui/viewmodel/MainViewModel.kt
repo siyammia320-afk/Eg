@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.model.AccountEntity
+import com.example.model.RangeItem
 import com.example.repository.AppRepository
 import com.example.service.FloatingOverlayService
 import kotlinx.coroutines.delay
@@ -21,7 +22,8 @@ import kotlinx.coroutines.launch
 
 data class MainUiState(
     val savedPassword: String = "",
-    val facebookRanges: List<String> = emptyList(),
+    val facebookRanges: List<RangeItem> = emptyList(),
+    val rangeMessages: Map<String, String> = emptyMap(),
     val selectedRange: String = "",
     val isServiceRunning: Boolean = false,
     val isOverlayPermissionGranted: Boolean = false,
@@ -33,6 +35,12 @@ data class MainUiState(
     val ageFilter: String = "18+",
     val telegramChatId: String = "",
     val telegramUsername: String = "",
+    val floatingMode: String = "FB", // "FB" or "IG"
+    val igCountry: String = "BD",
+    val igPhone: String = "",
+    val igUsername: String = "",
+    val isCreatingIg: Boolean = false,
+    val igStatusMessage: String? = null,
     val statusMessage: String? = null
 )
 
@@ -56,6 +64,25 @@ class MainViewModel(
             while (isActive) {
                 try {
                     val otps = repository.checkAndProcessOtps()
+                    
+                    // Map incoming messages to ranges dynamically
+                    if (otps.isNotEmpty()) {
+                        val currentRanges = _uiState.value.facebookRanges
+                        if (currentRanges.isNotEmpty()) {
+                            val newMessages = _uiState.value.rangeMessages.toMutableMap()
+                            for (otp in otps) {
+                                val cleanPhone = otp.number.replace(Regex("[^0-9]"), "")
+                                for (range in currentRanges) {
+                                    val cleanRange = range.code.replace("X", "", ignoreCase = true).replace("x", "", ignoreCase = true).trim()
+                                    if (cleanRange.isNotEmpty() && cleanPhone.startsWith(cleanRange)) {
+                                        newMessages[range.code] = otp.rawMessage.ifEmpty { "OTP: ${otp.otpCode}" }
+                                    }
+                                }
+                            }
+                            _uiState.value = _uiState.value.copy(rangeMessages = newMessages)
+                        }
+                    }
+
                     for (otp in otps) {
                         val key = "${otp.number}_${otp.otpCode}"
                         if (!autoCopiedOtps.contains(key)) {
@@ -89,6 +116,10 @@ class MainViewModel(
         val age = repository.getAgeFilter()
         val chatId = repository.getTelegramChatId()
         val username = repository.getTelegramUsername()
+        val mode = repository.getFloatingMode()
+        val country = repository.getIgCountry()
+        val initialIgUser = repository.generateRandomIgUsername()
+        val initialIgPhone = repository.generateRandomPhone(country)
 
         _uiState.value = _uiState.value.copy(
             savedPassword = pass,
@@ -98,10 +129,91 @@ class MainViewModel(
             genderConfig = gender,
             ageFilter = age,
             telegramChatId = chatId,
-            telegramUsername = username
+            telegramUsername = username,
+            floatingMode = mode,
+            igCountry = country,
+            igUsername = initialIgUser,
+            igPhone = initialIgPhone
         )
 
         refreshFacebookRanges()
+    }
+
+    fun setFloatingMode(mode: String, context: Context? = null) {
+        repository.setFloatingMode(mode)
+        _uiState.value = _uiState.value.copy(floatingMode = mode)
+        if (_uiState.value.isServiceRunning && context != null) {
+            // Restart overlay service with new mode
+            startFloatingService(context)
+        }
+    }
+
+    fun setIgCountry(country: String) {
+        repository.setIgCountry(country)
+        val newPhone = repository.generateRandomPhone(country)
+        _uiState.value = _uiState.value.copy(
+            igCountry = country,
+            igPhone = newPhone
+        )
+    }
+
+    fun setIgPhone(phone: String) {
+        _uiState.value = _uiState.value.copy(igPhone = phone)
+    }
+
+    fun setIgUsername(username: String) {
+        _uiState.value = _uiState.value.copy(igUsername = username)
+    }
+
+    fun randomizeIgFields() {
+        val currentCountry = _uiState.value.igCountry
+        val newUser = repository.generateRandomIgUsername()
+        val newPhone = repository.generateRandomPhone(currentCountry)
+        _uiState.value = _uiState.value.copy(
+            igUsername = newUser,
+            igPhone = newPhone,
+            igStatusMessage = null
+        )
+    }
+
+    fun createIgAccountNow() {
+        val phone = _uiState.value.igPhone.trim()
+        val username = _uiState.value.igUsername.trim()
+        val country = _uiState.value.igCountry.trim()
+
+        if (phone.isBlank()) {
+            _uiState.value = _uiState.value.copy(igStatusMessage = "❌ Please enter a valid phone number!")
+            return
+        }
+        if (username.isBlank()) {
+            _uiState.value = _uiState.value.copy(igStatusMessage = "❌ Please enter a username!")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isCreatingIg = true,
+                igStatusMessage = "⏳ Creating IG Account..."
+            )
+
+            val result = repository.createIgAccount(
+                phone = phone,
+                username = username,
+                countryCode = country
+            )
+
+            if (result.success) {
+                _uiState.value = _uiState.value.copy(
+                    isCreatingIg = false,
+                    igStatusMessage = "সাকসেস"
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isCreatingIg = false,
+                    igStatusMessage = "❌ ${result.error.ifEmpty { "Creation Failed" }}"
+                )
+            }
+        }
     }
 
     fun setTelegramBotConfig(chatId: String, username: String) {
@@ -164,7 +276,8 @@ class MainViewModel(
             _uiState.value = _uiState.value.copy(isLoadingRanges = true)
             val ranges = repository.getLiveFacebookRanges()
             val currentSelected = _uiState.value.selectedRange
-            val newSelected = if (ranges.contains(currentSelected)) currentSelected else (ranges.firstOrNull() ?: "")
+            val hasSelected = ranges.any { it.code == currentSelected }
+            val newSelected = if (hasSelected) currentSelected else (ranges.firstOrNull()?.code ?: "")
 
             repository.setSelectedRange(newSelected)
 
@@ -200,7 +313,10 @@ class MainViewModel(
     }
 
     fun startFloatingService(context: Context) {
-        val intent = Intent(context, FloatingOverlayService::class.java)
+        val mode = _uiState.value.floatingMode
+        val intent = Intent(context, FloatingOverlayService::class.java).apply {
+            putExtra("MODE", mode)
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
         } else {
@@ -209,7 +325,7 @@ class MainViewModel(
         repository.setServiceActive(true)
         _uiState.value = _uiState.value.copy(
             isServiceRunning = true,
-            statusMessage = "Start pressed: Floating Overlay is ACTIVE!"
+            statusMessage = "Floating Overlay [$mode Mode] is ACTIVE!"
         )
     }
 

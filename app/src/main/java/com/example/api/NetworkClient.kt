@@ -18,6 +18,8 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
+import com.example.model.RangeItem
+
 data class FacebookRange(
     val serviceName: String,
     val ranges: List<String>
@@ -36,6 +38,14 @@ data class FbCreationResult(
     val name: String = "",
     val password: String = "",
     val cookie: String = "",
+    val error: String = ""
+)
+
+data class IgCreationResult(
+    val success: Boolean,
+    val username: String = "",
+    val phone: String = "",
+    val message: String = "",
     val error: String = ""
 )
 
@@ -65,7 +75,7 @@ object NetworkClient {
             .build()
     }
 
-    suspend fun getLiveFacebookRanges(): List<String> = withContext(Dispatchers.IO) {
+    suspend fun getLiveFacebookRanges(): List<RangeItem> = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()
                 .url("$API_BASE_URL/liveaccess")
@@ -88,9 +98,27 @@ object NetworkClient {
                             if (sid.equals("Facebook", ignoreCase = true)) {
                                 val rangesArray = serviceObj.optJSONArray("ranges")
                                 if (rangesArray != null) {
-                                    val rangesList = mutableListOf<String>()
+                                    val rangesList = mutableListOf<RangeItem>()
                                     for (j in 0 until rangesArray.length()) {
-                                        rangesList.add(rangesArray.getString(j))
+                                        val elementObj = rangesArray.get(j)
+                                        if (elementObj is JSONObject) {
+                                            val code = elementObj.optString("range", "")
+                                                .ifEmpty { elementObj.optString("code", "") }
+                                                .ifEmpty { elementObj.optString("name", "") }
+                                                .ifEmpty { elementObj.optString("rangeCode", "") }
+                                            val message = elementObj.optString("message", "")
+                                                .ifEmpty { elementObj.optString("msg", "") }
+                                                .ifEmpty { elementObj.optString("status", "") }
+                                                .ifEmpty { elementObj.optString("info", "") }
+                                            if (code.isNotBlank()) {
+                                                rangesList.add(RangeItem(code, message))
+                                            }
+                                        } else {
+                                            val code = elementObj.toString()
+                                            if (code.isNotBlank()) {
+                                                rangesList.add(RangeItem(code, ""))
+                                            }
+                                        }
                                     }
                                     if (rangesList.isNotEmpty()) return@withContext rangesList
                                 }
@@ -371,9 +399,7 @@ object NetworkClient {
                 if (extractedUid.isNotEmpty()) {
                     val finalCookie = formatCleanCookie(
                         rawCookie = fullCookieStr,
-                        uid = extractedUid,
-                        phone = phone,
-                        password = finalPass
+                        uid = extractedUid
                     )
 
                     return@withContext FbCreationResult(
@@ -389,9 +415,7 @@ object NetworkClient {
                     val fallbackUid = "1000${System.currentTimeMillis().toString().takeLast(11)}"
                     val finalCookie = formatCleanCookie(
                         rawCookie = fullCookieStr,
-                        uid = fallbackUid,
-                        phone = phone,
-                        password = finalPass
+                        uid = fallbackUid
                     )
                     return@withContext FbCreationResult(
                         success = true,
@@ -528,9 +552,7 @@ object NetworkClient {
 
     fun formatCleanCookie(
         rawCookie: String,
-        uid: String = "",
-        phone: String = "",
-        password: String = ""
+        uid: String = ""
     ): String {
         val cleanPairs = LinkedHashMap<String, String>()
 
@@ -549,8 +571,11 @@ object NetworkClient {
                     val value = trimmed.substringAfter("=").trim()
                     val lowerKey = key.lowercase()
 
-                    // Exclude HTTP header directive attributes
-                    if (lowerKey in setOf("path", "domain", "expires", "max-age", "secure", "httponly", "samesite", "version", "comment")) {
+                    // Exclude HTTP header directive attributes AND credentials/phone/pass
+                    if (lowerKey in setOf(
+                            "path", "domain", "expires", "max-age", "secure", "httponly",
+                            "samesite", "version", "comment", "phone", "pass", "password", "number", "user", "pwd"
+                        )) {
                         continue
                     }
                     if (key.isNotBlank() && value.isNotBlank()) {
@@ -563,13 +588,154 @@ object NetworkClient {
         if (uid.isNotBlank()) {
             cleanPairs["c_user"] = uid
         }
-        if (phone.isNotBlank()) {
-            cleanPairs["phone"] = phone
-        }
-        if (password.isNotBlank()) {
-            cleanPairs["pass"] = password
-        }
 
-        return cleanPairs.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        // Return purely Facebook cookie pairs ending with semicolon delimiter
+        val joined = cleanPairs.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        return if (joined.endsWith(";")) joined else "$joined;"
+    }
+
+    suspend fun createMetaIgAccount(
+        phone: String,
+        username: String,
+        displayName: String = "",
+        countryCode: String = "BD",
+        passwordRaw: String = FIXED_PASSWORD
+    ): IgCreationResult = withContext(Dispatchers.IO) {
+        val epochSec = (System.currentTimeMillis() / 1000).toString()
+        val waterfallId = UUID.randomUUID().toString()
+        val lsdToken = "AdTIykA_1GnAZ8y1MsSzoZCoWeg"
+        val encodedPassword = "#PWD_BROWSER:5:$epochSec:AaxQAHSVITW3xp2G2gyDJ7KQS7OJFFNrrOhJmhVcMzN2Qq9lZIYBf6jQ7bQnWQgym+4SQhjOTzyj3mb915sb4JPvKw5h30Qrlk+WAxVUHCcqdQu8hXvynL8fRi5QabcJD6Wem3mYLktN1LjiEwo="
+        val nameToUse = displayName.ifBlank { username.substringBefore("_").replaceFirstChar { it.uppercase() } }
+
+        val formBuilder = FormBody.Builder()
+            .add("client_consent_timestamp", epochSec)
+            .add("display_name", nameToUse)
+            .add("foa_import_source_name", "")
+            .add("foa_import_source_obid", "")
+            .add("nta_disclosures_summary_cms_id", "")
+            .add("picture_source", "")
+            .add("tos_cms_id", "957798449862312")
+            .add("username", username)
+            .add("consent_version", "")
+            .add("contact_point", phone)
+            .add("contact_point_type", "PHONE_NUMBER")
+            .add("csi", "4kDhs4XgRql7KFW4tpZ79aqf")
+            .add("date_of_birth", "2001-08-19")
+            .add("device_id", "")
+            .add("fb_encrypted_access_token", "")
+            .add("fb_oidc_access_token", "")
+            .add("first_name", "")
+            .add("google_id_token", "")
+            .add("has_youth_consent", "false")
+            .add("ig_encrypted_access_token", "")
+            .add("ig_encrypted_auth_header", "")
+            .add("ig_oidc_access_token", "")
+            .add("last_name", "")
+            .add("opt_into_marketing", "false")
+            .add("password", encodedPassword)
+            .add("redirect_uri", "https://auth.meta.com/oidc/?app_id=1522763855472543&redirect_uri=https%3A%2F%2Fauth.meta.ai%2Fecto&response_type=code&scope=openid%2Blinking&state=eyJjc3JmX3Rva2VuIjoia0lrV3ZUY2tFSHROb1FRZGg3MkNjZGxaR0RQOTZpVXVTTlRvMHBzeE83NCIsInJlZGlyZWN0X3RvIjoiaHR0cHM6Ly93d3cubWV0YS5haS9vaWRjL2NhbGxiYWNrIiwic3RhcnRlZF9hdCI6MTc4NzEyNDg5NjUwMSwid2F0ZXJmYWxsX2lkIjoiZTU2NDdjMTktN2YzNy00NTExLTg1M2ItMDdjYjc3NWI3MzQyIn0%3D&waterfall_id=e5647c19-7f37-4511-853b-07cb775b7342&code_challenge=eJxb2CbtS0DPvaphyt1lbeu3p035dzNTalafSfd-ztQ&code_challenge_method=S256")
+            .add("reg_integrity", "Q8W2BTc29RJSTgUojxTSyZwKv_b5dYPeHA9vYld5rc6ipGCtdVfAjGIcHTsSVHSQ-8Lc00azJ4iOyLfL8N2AlOuWZifzjsnO3M2UPbW61DbQNSem-LTBNiXduOrcU11wGn-XBgg7o3V8S-TrZz4cqZTLa9OtOOz9i0xqDh_9ix9gGi97nZqcKuHKpDZCYihNiiiNO0ezWjiRDh-XuxGj8sSBVScCCsMCRopI91ZSBnzdq59q1V-rgUCF_FYD3Z6-LHBx8MWvbuPWXdk1Rj0E9jIimyIw-j4fsD_L00ydxmqKsumHmjdZlpKLG5d05IdxvI0qD8_SeYcbEUHUjXgy85wS5ATB-7SOiNLDFkcS|kregenc")
+            .add("should_save_credentials", "true")
+            .add("source_app_id", "1522763855472543")
+            .add("third_party_age_verification_id", "")
+            .add("waterfall_id", waterfallId)
+            .add("caa_event_flow", "ntm")
+            .add("entry_point", "login_home")
+            .add("event_client_time", "${System.currentTimeMillis() / 1000.0}")
+            .add("is_kadabra_zero", "false")
+            .add("reg_navigation_flow_name", "new_to_family_c50_r1")
+            .add("regulation_jurisdiction", "[\"${countryCode.uppercase()}\"]")
+            .add("qpl_join_id", "f769ec62b52efeb44")
+            .add("__user", "0")
+            .add("__a", "1")
+            .add("__req", "1b")
+            .add("__hs", "20684.HYP:frl_comet_auth_pkg.2.1...0")
+            .add("dpr", "2")
+            .add("__ccg", "EXCELLENT")
+            .add("__rev", "1045526258")
+            .add("__s", "d2omdx:7ccag3:s2uejx")
+            .add("__hsi", "7675643117285530111")
+            .add("__dyn", "7xeUmwlEnwn8K2Wmh0no6u5U4e0yoW3q32360CEbo1nEhw2nVE4W099w8G1Dz81s8hwnU2lwv89k2C1Fwc60D82IzXwae4UaEW0Loco5G0zK1swa-0raazo7u0zE2ZwrU6C2q0XU6O1FwlU5G3y0zo7u0jW0eowRzE")
+            .add("__csr", "gkaauWWZ5qAiGyaBlh4vvujKuVpEjK8BKibKcmh29-l4DKjKq2q04080ceRhyKucK8hbCIxkizOj7po2HwEBwQw05iMw2aVo1oE0eT82ogmw2a86maBw1HC04Bk2lBDgGu3K07_oqxm0GPwdFwCUga2V00Szw2i8")
+            .add("__hsdp", "gdzOgh04hmh8w14Eux69w2Lo1ke00z1U0sgw")
+            .add("__hblp", "09m6811ax28Bw9K1pxW4oB02I8K2Gm0i60aUw25o0aG80fwo0IK0k607481OUhU5i3u0F80r0wkE0gyw8a0b9w34E")
+            .add("__sjsp", "gdzOhT28")
+            .add("__comet_req", "33")
+            .add("lsd", lsdToken)
+            .add("jazoest", "22388")
+            .add("__spin_r", "1045526258")
+            .add("__spin_b", "trunk")
+            .add("__spin_t", "1787124927")
+            .add("__jssesw", "1")
+
+        val request = Request.Builder()
+            .url("https://auth.meta.com/login/device-based/kadabra-register-save-credentials/")
+            .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 12; itel S665L Build/SP1A.210812.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/105.0.5195.136 Mobile Safari/537.36")
+            .addHeader("Accept-Encoding", "gzip, deflate")
+            .addHeader("Content-Type", "application/x-www-form-urlencoded")
+            .addHeader("x-fb-lsd", lsdToken)
+            .addHeader("x-asbd-id", "359341")
+            .addHeader("origin", "https://auth.meta.com")
+            .addHeader("x-requested-with", "mark.via.gp")
+            .addHeader("sec-fetch-site", "same-origin")
+            .addHeader("sec-fetch-mode", "cors")
+            .addHeader("sec-fetch-dest", "empty")
+            .addHeader("referer", "https://auth.meta.com/?waterfall_id=$waterfallId&redirect_uri=https%3A%2F%2Fauth.meta.ai%2Fecto")
+            .addHeader("accept-language", "en-US,en;q=0.9,fr-FR;q=0.8,fr;q=0.7")
+            .addHeader("Cookie", "datr=vlyFasvUX9awlb5qrUBkeKN8; meta_csrf=J_bFjURGS7PqKXmJFlDNPN")
+            .post(formBuilder.build())
+            .build()
+
+        try {
+            okHttpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                val cleanJsonStr = if (body.startsWith("for (;;);")) body.substringAfter("for (;;);") else body
+
+                var isSuccess = false
+                var errorMsg = ""
+
+                try {
+                    val json = JSONObject(cleanJsonStr)
+                    if (json.has("error")) {
+                        errorMsg = json.optString("errorSummary", "")
+                        if (errorMsg.isBlank()) errorMsg = json.optString("errorDescription", "Registration Error")
+                        isSuccess = false
+                    } else if (json.has("payload") || json.optInt("__ar", 0) == 1) {
+                        isSuccess = true
+                    } else if (response.isSuccessful) {
+                        isSuccess = true
+                    }
+                } catch (e: Exception) {
+                    if (response.isSuccessful && !body.contains("error")) {
+                        isSuccess = true
+                    } else {
+                        errorMsg = "Parse error: ${e.message}"
+                    }
+                }
+
+                if (isSuccess) {
+                    IgCreationResult(
+                        success = true,
+                        username = username,
+                        phone = phone,
+                        message = "সাকসেস"
+                    )
+                } else {
+                    IgCreationResult(
+                        success = false,
+                        username = username,
+                        phone = phone,
+                        error = errorMsg.ifBlank { "Creation Failed" }
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            IgCreationResult(
+                success = false,
+                username = username,
+                phone = phone,
+                error = e.message ?: "Connection error"
+            )
+        }
     }
 }

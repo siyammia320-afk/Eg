@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.model.AccountEntity
+import com.example.model.RangeItem
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -76,7 +78,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.model.AccountEntity
 import com.example.ui.viewmodel.MainViewModel
 
 // Flat High-Contrast Color Palette (NO GLOW, NO HEAVY ANIMATIONS)
@@ -184,59 +185,98 @@ fun MainScreen(viewModel: MainViewModel) {
                 )
             }
 
-            // 2. START & STOP SERVICE CONTROL CARD
+            // 1.8 MODE SELECTION SWITCHER (FB vs IG)
             item {
-                ServiceControlCard(
-                    isRunning = uiState.isServiceRunning,
-                    onToggleClick = { viewModel.toggleService(context) },
-                    onCreateNowClick = { viewModel.createAccountNow(context) },
-                    isCreating = uiState.isCreatingAccount
+                ModeSelectionCard(
+                    currentMode = uiState.floatingMode,
+                    onSelectMode = { viewModel.setFloatingMode(it, context) }
                 )
             }
 
-            // 3. ACCOUNT CREATION SETUP CARD (LANGUAGE, GENDER, AGE)
-            item {
-                AccountSetupCard(
-                    currentLanguage = uiState.nameLanguage,
-                    currentGender = uiState.genderConfig,
-                    currentAge = uiState.ageFilter,
-                    onLanguageChange = { viewModel.setNameLanguage(it) },
-                    onGenderChange = { viewModel.setGenderConfig(it) },
-                    onAgeChange = { viewModel.setAgeFilter(it) }
-                )
-            }
+            if (uiState.floatingMode == "IG") {
+                // ============================================
+                // INSTAGRAM / META AUTHENTICATION FLOW
+                // ============================================
+                item {
+                    IgServiceControlCard(
+                        isRunning = uiState.isServiceRunning,
+                        onToggleClick = { viewModel.toggleService(context) }
+                    )
+                }
 
-            // 4. TELEGRAM BOT SETUP CARD
-            item {
-                BotSetupCard(
-                    chatId = uiState.telegramChatId,
-                    username = uiState.telegramUsername,
-                    onConfigureClick = { showBotSetupDialog = true }
-                )
-            }
+                item {
+                    IgCreatorCard(
+                        selectedCountry = uiState.igCountry,
+                        phoneNumber = uiState.igPhone,
+                        username = uiState.igUsername,
+                        isCreating = uiState.isCreatingIg,
+                        statusMessage = uiState.igStatusMessage,
+                        onCountryChange = { viewModel.setIgCountry(it) },
+                        onPhoneChange = { viewModel.setIgPhone(it) },
+                        onUsernameChange = { viewModel.setIgUsername(it) },
+                        onRandomClick = { viewModel.randomizeIgFields() },
+                        onCreateClick = { viewModel.createIgAccountNow() }
+                    )
+                }
+            } else {
+                // ============================================
+                // FACEBOOK AUTOMATION FLOW
+                // ============================================
+                // 2. START & STOP SERVICE CONTROL CARD
+                item {
+                    ServiceControlCard(
+                        isRunning = uiState.isServiceRunning,
+                        onToggleClick = { viewModel.toggleService(context) },
+                        onCreateNowClick = { viewModel.createAccountNow(context) },
+                        isCreating = uiState.isCreatingAccount
+                    )
+                }
 
-            // 5. FIXED SYSTEM PASSWORD CARD (LOCKED)
-            item {
-                FixedPasswordCard(
-                    fixedPassword = com.example.api.NetworkClient.FIXED_PASSWORD,
-                    onCopyPassword = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("PASSWORD", com.example.api.NetworkClient.FIXED_PASSWORD)
-                        clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "Copied Password: ${com.example.api.NetworkClient.FIXED_PASSWORD}", Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
+                // 3. ACCOUNT CREATION SETUP CARD (LANGUAGE, GENDER, AGE)
+                item {
+                    AccountSetupCard(
+                        currentLanguage = uiState.nameLanguage,
+                        currentGender = uiState.genderConfig,
+                        currentAge = uiState.ageFilter,
+                        onLanguageChange = { viewModel.setNameLanguage(it) },
+                        onGenderChange = { viewModel.setGenderConfig(it) },
+                        onAgeChange = { viewModel.setAgeFilter(it) }
+                    )
+                }
 
-            // 4. LIVE FACEBOOK RANGE SELECTOR CARD
-            item {
-                FacebookRangeCard(
-                    ranges = uiState.facebookRanges,
-                    selectedRange = uiState.selectedRange,
-                    isLoading = uiState.isLoadingRanges,
-                    onRefreshClick = { viewModel.refreshFacebookRanges() },
-                    onSelectRange = { viewModel.selectRange(it) }
-                )
+                // 4. TELEGRAM BOT SETUP CARD
+                item {
+                    BotSetupCard(
+                        chatId = uiState.telegramChatId,
+                        username = uiState.telegramUsername,
+                        onConfigureClick = { showBotSetupDialog = true }
+                    )
+                }
+
+                // 5. FIXED SYSTEM PASSWORD CARD (LOCKED)
+                item {
+                    FixedPasswordCard(
+                        fixedPassword = com.example.api.NetworkClient.FIXED_PASSWORD,
+                        onCopyPassword = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = ClipData.newPlainText("PASSWORD", com.example.api.NetworkClient.FIXED_PASSWORD)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "Copied Password: ${com.example.api.NetworkClient.FIXED_PASSWORD}", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
+
+                // 6. LIVE FACEBOOK RANGE SELECTOR CARD
+                item {
+                    FacebookRangeCard(
+                        ranges = uiState.facebookRanges,
+                        rangeMessages = uiState.rangeMessages,
+                        selectedRange = uiState.selectedRange,
+                        isLoading = uiState.isLoadingRanges,
+                        onRefreshClick = { viewModel.refreshFacebookRanges() },
+                        onSelectRange = { viewModel.selectRange(it) }
+                    )
+                }
             }
 
             // 5. QUICK HISTORY PREVIEW
@@ -286,7 +326,7 @@ fun MainScreen(viewModel: MainViewModel) {
                         account = account,
                         onCopyNumber = { copyTextToClipboard(context, "NUMBER", account.phone) },
                         onCopyCookie = {
-                            val cleanCookie = com.example.api.NetworkClient.formatCleanCookie(account.cookie, account.uid, account.phone, account.password)
+                            val cleanCookie = com.example.api.NetworkClient.formatCleanCookie(account.cookie, account.uid)
                             copyTextToClipboard(context, "COOKIE", cleanCookie)
                         },
                         onCopyUid = { copyTextToClipboard(context, "UID", account.uid) },
@@ -305,7 +345,7 @@ fun MainScreen(viewModel: MainViewModel) {
             onCopyNumber = { copyTextToClipboard(context, "NUMBER", it) },
             onCopyCookie = { raw ->
                 val matched = uiState.accountsHistory.find { it.cookie == raw || it.phone == raw || it.uid == raw }
-                val clean = com.example.api.NetworkClient.formatCleanCookie(raw, matched?.uid ?: "", matched?.phone ?: "", matched?.password ?: "")
+                val clean = com.example.api.NetworkClient.formatCleanCookie(raw, matched?.uid ?: "")
                 copyTextToClipboard(context, "COOKIE", clean)
             },
             onCopyUid = { copyTextToClipboard(context, "UID", it) },
@@ -362,6 +402,309 @@ private fun PermissionCard(onGrantClick: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().testTag("grant_permission_button")
             ) {
                 Text("GRANT PERMISSION IN SETTINGS", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModeSelectionCard(
+    currentMode: String,
+    onSelectMode: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = "⚡ SELECT FLOATING MODE (বাটন নির্বাচন করুন)",
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = TextSecondary
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // FB Button
+                Button(
+                    onClick = { onSelectMode("FB") },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (currentMode == "FB") PrimaryFbBlue else DarkCanvas
+                    ),
+                    shape = RoundedCornerShape(6.dp),
+                    border = if (currentMode == "FB") null else androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .testTag("mode_fb_button")
+                ) {
+                    Text(
+                        text = "🔵 FB (Facebook)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = Color.White
+                    )
+                }
+
+                // IG Button
+                Button(
+                    onClick = { onSelectMode("IG") },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (currentMode == "IG") Color(0xFFE1306C) else DarkCanvas
+                    ),
+                    shape = RoundedCornerShape(6.dp),
+                    border = if (currentMode == "IG") null else androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(44.dp)
+                        .testTag("mode_ig_button")
+                ) {
+                    Text(
+                        text = "🟣 IG (Instagram)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IgServiceControlCard(
+    isRunning: Boolean,
+    onToggleClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (isRunning) Color(0xFFE1306C) else BorderColor)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "IG FLOATING OVERLAY SERVICE",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = if (isRunning) "STATUS: ACTIVE (Instagram floating button on screen)" else "STATUS: STOPPED",
+                        fontSize = 12.sp,
+                        color = if (isRunning) Color(0xFFE1306C) else TextSecondary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // START / STOP TOGGLE BUTTON FOR IG
+            Button(
+                onClick = onToggleClick,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isRunning) DangerRed else Color(0xFFE1306C)
+                ),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .testTag("ig_start_stop_button")
+            ) {
+                Icon(
+                    imageVector = if (isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = Color.White
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (isRunning) "STOP IG OVERLAY" else "START IG OVERLAY",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = Color.White
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IgCreatorCard(
+    selectedCountry: String,
+    phoneNumber: String,
+    username: String,
+    isCreating: Boolean,
+    statusMessage: String?,
+    onCountryChange: (String) -> Unit,
+    onPhoneChange: (String) -> Unit,
+    onUsernameChange: (String) -> Unit,
+    onRandomClick: () -> Unit,
+    onCreateClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "📸 IG ACCOUNT CREATOR (Meta Auth)",
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = Color.White
+            )
+
+            // Country Selector: BD, MG, SL, US
+            Text(
+                text = "Country (দেশ নির্বাচন):",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextSecondary
+            )
+
+            val countries = listOf("BD" to "🇧🇩 BD", "MG" to "🇲🇬 MG", "SL" to "🇱🇰 SL", "US" to "🇺🇸 US")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                countries.forEach { (code, label) ->
+                    val isSelected = selectedCountry == code
+                    Button(
+                        onClick = { onCountryChange(code) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isSelected) Color(0xFFE1306C) else DarkCanvas
+                        ),
+                        shape = RoundedCornerShape(4.dp),
+                        border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(1f).height(36.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+
+            // Phone number input
+            Text(
+                text = "Number (ফোন নাম্বার):",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextSecondary
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = phoneNumber,
+                onValueChange = onPhoneChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("e.g. +88019...", color = Color.Gray, fontSize = 13.sp) },
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedContainerColor = DarkCanvas,
+                    unfocusedContainerColor = DarkCanvas,
+                    focusedBorderColor = Color(0xFFE1306C),
+                    unfocusedBorderColor = BorderColor
+                )
+            )
+
+            // Username input
+            Text(
+                text = "Username (ইউজার নেম):",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextSecondary
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = username,
+                onValueChange = onUsernameChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("e.g. narwhal_deer_1234", color = Color.Gray, fontSize = 13.sp) },
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedContainerColor = DarkCanvas,
+                    unfocusedContainerColor = DarkCanvas,
+                    focusedBorderColor = Color(0xFFE1306C),
+                    unfocusedBorderColor = BorderColor
+                )
+            )
+
+            // Random button & Create Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onRandomClick,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5E35B1)),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.weight(1f).height(46.dp)
+                ) {
+                    Text("🎲 RANDOM", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
+                }
+
+                Button(
+                    onClick = onCreateClick,
+                    enabled = !isCreating,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE1306C)),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.weight(1.3f).height(46.dp)
+                ) {
+                    if (isCreating) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("CREATING...", fontSize = 12.sp, color = Color.White)
+                    } else {
+                        Text("⚡ CREATE IG", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                    }
+                }
+            }
+
+            // Success or Status banner
+            if (statusMessage != null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (statusMessage.contains("সাকসেস")) Color(0xFF1B5E20) else DarkCanvas,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (statusMessage.contains("সাকসেস")) Color(0xFF00E676) else DangerRed
+                    )
+                ) {
+                    Text(
+                        text = statusMessage,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = if (statusMessage.contains("সাকসেস")) 18.sp else 13.sp,
+                        color = if (statusMessage.contains("সাকসেস")) Color(0xFF00E676) else Color.White,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
             }
         }
     }
@@ -535,7 +878,8 @@ private fun FixedPasswordCard(
 
 @Composable
 private fun FacebookRangeCard(
-    ranges: List<String>,
+    ranges: List<RangeItem>,
+    rangeMessages: Map<String, String>,
     selectedRange: String,
     isLoading: Boolean,
     onRefreshClick: () -> Unit,
@@ -583,8 +927,11 @@ private fun FacebookRangeCard(
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ranges.forEach { rangeItem ->
-                        val isSelected = rangeItem == selectedRange
-                        Row(
+                        val isSelected = rangeItem.code == selectedRange
+                        val liveMessage = rangeMessages[rangeItem.code]?.ifBlank { null }
+                            ?: rangeItem.message.ifBlank { null }
+
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(
@@ -596,19 +943,33 @@ private fun FacebookRangeCard(
                                     color = if (isSelected) PrimaryFbBlue else BorderColor,
                                     shape = RoundedCornerShape(6.dp)
                                 )
-                                .clickable { onSelectRange(rangeItem) }
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                                .clickable { onSelectRange(rangeItem.code) }
+                                .padding(12.dp)
                         ) {
-                            Text(
-                                text = "Range: $rangeItem",
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) PrimaryFbBlue else TextPrimary,
-                                fontSize = 14.sp
-                            )
-                            if (isSelected) {
-                                Text("SELECTED", color = AccentGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Range: ${rangeItem.code}",
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) PrimaryFbBlue else TextPrimary,
+                                    fontSize = 14.sp
+                                )
+                                if (isSelected) {
+                                    Text("SELECTED", color = AccentGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            if (!liveMessage.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "💬 Message: $liveMessage",
+                                    fontSize = 11.sp,
+                                    color = if (isSelected) Color(0xFF80CBC4) else Color(0xFFFFB74D),
+                                    fontWeight = FontWeight.Medium
+                                )
                             }
                         }
                     }
@@ -815,10 +1176,7 @@ fun HistoryDialogView(
                             AccountItemRow(
                                 account = item,
                                 onCopyNumber = { onCopyNumber(item.phone) },
-                                onCopyCookie = {
-                                    val cookieStr = item.cookie.ifEmpty { "c_user=${item.uid}; phone=${item.phone}; pass=${item.password}" }
-                                    onCopyCookie(cookieStr)
-                                },
+                                onCopyCookie = { onCopyCookie(item.cookie) },
                                 onCopyUid = { onCopyUid(item.uid) },
                                 onDelete = { onDelete(item.id) }
                             )
@@ -896,9 +1254,26 @@ private fun AccountSetupCard(
                     modifier = Modifier.weight(1f)
                 )
                 FilterChipButton(
+                    text = "🇫🇷 French",
+                    isSelected = currentLanguage == "FRENCH",
+                    onClick = { onLanguageChange("FRENCH") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChipButton(
                     text = "🇬🇧 English",
                     isSelected = currentLanguage == "ENGLISH",
                     onClick = { onLanguageChange("ENGLISH") },
+                    modifier = Modifier.weight(1f)
+                )
+                FilterChipButton(
+                    text = "🇸🇦 Arabic",
+                    isSelected = currentLanguage == "ARABIC",
+                    onClick = { onLanguageChange("ARABIC") },
                     modifier = Modifier.weight(1f)
                 )
             }

@@ -8,6 +8,7 @@ import com.example.data.AccountDao
 import com.example.data.AppDatabase
 import com.example.data.PreferencesManager
 import com.example.model.AccountEntity
+import com.example.model.RangeItem
 import kotlinx.coroutines.flow.Flow
 
 class AppRepository(context: Context) {
@@ -57,6 +58,56 @@ class AppRepository(context: Context) {
         prefs.telegramUsername = username
     }
 
+    fun getFloatingMode(): String = prefs.floatingMode
+    fun setFloatingMode(mode: String) {
+        prefs.floatingMode = mode
+    }
+
+    fun getIgCountry(): String = prefs.igSelectedCountry
+    fun setIgCountry(country: String) {
+        prefs.igSelectedCountry = country
+    }
+
+    suspend fun createIgAccount(
+        phone: String,
+        username: String,
+        displayName: String = "",
+        countryCode: String = "BD"
+    ): com.example.api.IgCreationResult {
+        return NetworkClient.createMetaIgAccount(
+            phone = phone,
+            username = username,
+            displayName = displayName,
+            countryCode = countryCode
+        )
+    }
+
+    fun generateRandomIgUsername(): String {
+        val adjectives = listOf(
+            "narwhal", "silent", "ocean", "velvet", "crystal", "swift", "golden", "cosmic",
+            "mystic", "shadow", "frost", "amber", "silver", "radiant", "breeze", "storm",
+            "hyper", "blaze", "cyber", "apex", "royal", "neon", "phantom", "vortex"
+        )
+        val nouns = listOf(
+            "deer", "tiger", "falcon", "fox", "wolf", "hawk", "lion", "eagle",
+            "panda", "panther", "otter", "cobra", "dragon", "viper", "bear", "runner",
+            "rider", "hunter", "scout", "knight", "ranger", "pilot", "spark"
+        )
+        val adj = adjectives.random()
+        val noun = nouns.random()
+        val num = (1000..9999).random()
+        return "${adj}_${noun}_$num"
+    }
+
+    fun generateRandomPhone(countryCode: String): String {
+        return when (countryCode.uppercase().trim()) {
+            "MG" -> "+26134${(1000000..9999999).random()}"
+            "SL" -> "+232${(70000000..79999999).random()}"
+            "US" -> "+1${(2010000000L..9899999999L).random()}"
+            else -> "+88019${(10000000..99999999).random()}" // BD default
+        }
+    }
+
     suspend fun sendTelegramOtp(number: String, otp: String, rawMessage: String = ""): Boolean {
         val chatId = getTelegramChatId()
         val username = getTelegramUsername()
@@ -83,7 +134,7 @@ class AppRepository(context: Context) {
         }
     }
 
-    suspend fun getLiveFacebookRanges(): List<String> {
+    suspend fun getLiveFacebookRanges(): List<RangeItem> {
         return NetworkClient.getLiveFacebookRanges()
     }
 
