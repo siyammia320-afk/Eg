@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
@@ -98,7 +99,6 @@ fun MainScreen(viewModel: MainViewModel) {
 
     var passwordInput by remember { mutableStateOf(uiState.savedPassword) }
     var showHistoryDialog by remember { mutableStateOf(false) }
-    var showBotSetupDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.checkPermissions(context)
@@ -129,16 +129,7 @@ fun MainScreen(viewModel: MainViewModel) {
                     containerColor = CardBackground
                 ),
                 actions = {
-                    Button(
-                        onClick = { showBotSetupDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = if (uiState.telegramChatId.isNotBlank()) AccentGreen else PrimaryFbBlue),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier
-                            .padding(end = 4.dp)
-                            .testTag("bot_setup_button")
-                    ) {
-                        Text("🤖 BOT SETUP", fontSize = 11.sp, color = TextPrimary)
-                    }
+
                     Button(
                         onClick = { showHistoryDialog = true },
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
@@ -198,9 +189,9 @@ fun MainScreen(viewModel: MainViewModel) {
                 )
             }
 
-            // 3. ACCOUNT CREATION SETUP CARD (LANGUAGE, GENDER, AGE)
+            // 3. ACCOUNT PROFILE & NAME CONFIGURATION (LANGUAGE, GENDER, AGE)
             item {
-                AccountSetupCard(
+                AccountConfigCard(
                     currentLanguage = uiState.nameLanguage,
                     currentGender = uiState.genderConfig,
                     currentAge = uiState.ageFilter,
@@ -210,14 +201,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 )
             }
 
-            // 4. TELEGRAM BOT SETUP CARD
-            item {
-                BotSetupCard(
-                    chatId = uiState.telegramChatId,
-                    username = uiState.telegramUsername,
-                    onConfigureClick = { showBotSetupDialog = true }
-                )
-            }
+
 
             // 5. FIXED SYSTEM PASSWORD CARD (LOCKED)
             item {
@@ -229,6 +213,14 @@ fun MainScreen(viewModel: MainViewModel) {
                         clipboard.setPrimaryClip(clip)
                         Toast.makeText(context, "Copied Password: ${com.example.api.NetworkClient.FIXED_PASSWORD}", Toast.LENGTH_SHORT).show()
                     }
+                )
+            }
+
+            // 5.5 VOLTX SMS API TOKEN CARD
+            item {
+                ApiConfigCard(
+                    currentApiKey = uiState.apiKey,
+                    onUpdateApiKey = { viewModel.updateApiKey(it) }
                 )
             }
 
@@ -319,18 +311,7 @@ fun MainScreen(viewModel: MainViewModel) {
         )
     }
 
-    if (showBotSetupDialog) {
-        BotSetupDialog(
-            currentChatId = uiState.telegramChatId,
-            currentUsername = uiState.telegramUsername,
-            onDismiss = { showBotSetupDialog = false },
-            onSave = { newChatId, newUsername ->
-                viewModel.setTelegramBotConfig(newChatId, newUsername)
-                showBotSetupDialog = false
-                Toast.makeText(context, "Telegram Bot Config Saved!", Toast.LENGTH_SHORT).show()
-            }
-        )
-    }
+
 }
 
 @Composable
@@ -541,6 +522,100 @@ private fun FixedPasswordCard(
 }
 
 @Composable
+private fun ApiConfigCard(
+    currentApiKey: String,
+    onUpdateApiKey: ((String) -> Unit)? = null
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("api_config_card"),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00C853).copy(alpha = 0.5f))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Security, contentDescription = null, tint = AccentGreen)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "VOLTX SMS API (SECURITY LOCKED 🔒)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = TextPrimary
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = AccentGreen.copy(alpha = 0.15f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentGreen)
+                ) {
+                    Text(
+                        text = "ACTIVE & LOCKED",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AccentGreen,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(6.dp),
+                color = DarkCanvas,
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Header mauthapi: $currentApiKey",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF4DEAEA)
+                        )
+                        Text(
+                            text = "3x Base64 Vault",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentGreen
+                        )
+                    }
+
+                    Text(
+                        text = "Endpoints: /getnum • /liveaccess • /success-otp • /console (live feed)",
+                        fontSize = 10.sp,
+                        color = TextSecondary
+                    )
+
+                    Text(
+                        text = "🛡️ Anti-Tamper: APK ওপেন করার সাথে সাথে কোনো মডিফিকেশন ধরা পড়লে স্বয়ংক্রিয়ভাবে Auto-Exit হবে।",
+                        fontSize = 10.sp,
+                        color = Color(0xFF81C784)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun FacebookRangeCard(
     ranges: List<RangeItem>,
     rangeMessages: Map<String, String>,
@@ -627,12 +702,37 @@ private fun FacebookRangeCard(
                             }
 
                             if (!liveMessage.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Surface(
+                                    color = Color(0xFF1E3A2B),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00C853)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "💬 LIVE SMS: ",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF00E676)
+                                        )
+                                        Text(
+                                            text = liveMessage,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            } else {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "💬 Message: $liveMessage",
-                                    fontSize = 11.sp,
-                                    color = if (isSelected) Color(0xFF80CBC4) else Color(0xFFFFB74D),
-                                    fontWeight = FontWeight.Medium
+                                    text = "⏳ লাইভ এসএমএস এর জন্য অপেক্ষা করা হচ্ছে...",
+                                    fontSize = 10.sp,
+                                    color = TextSecondary
                                 )
                             }
                         }
@@ -871,7 +971,7 @@ private fun copyTextToClipboard(context: Context, label: String, text: String) {
 }
 
 @Composable
-private fun AccountSetupCard(
+private fun AccountConfigCard(
     currentLanguage: String,
     currentGender: String,
     currentAge: String,
@@ -894,7 +994,7 @@ private fun AccountSetupCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "⚙️ ACCOUNT SETUP & NAME GENERATOR",
+                text = "⚙️ NAME & PROFILE CONFIGURATION",
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = TextPrimary
@@ -1054,175 +1154,7 @@ private fun FilterChipButton(
     }
 }
 
-@Composable
-private fun BotSetupCard(
-    chatId: String,
-    username: String,
-    onConfigureClick: () -> Unit
-) {
-    val isConfigured = chatId.isNotBlank()
-    val statusText = if (isConfigured) {
-        if (username.isNotBlank()) "Active: $username (ID: $chatId)" else "Active (ID: $chatId)"
-    } else {
-        "Status: Not Configured (Click to set Chat ID & Username)"
-    }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(8.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "🤖 TELEGRAM BOT SETUP",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = TextPrimary
-                )
-                Text(
-                    text = statusText,
-                    fontSize = 12.sp,
-                    color = if (isConfigured) AccentGreen else TextSecondary,
-                    fontWeight = if (isConfigured) FontWeight.Bold else FontWeight.Normal
-                )
-            }
-
-            Button(
-                onClick = onConfigureClick,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isConfigured) AccentGreen else PrimaryFbBlue
-                ),
-                shape = RoundedCornerShape(6.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-            ) {
-                Text(
-                    text = if (isConfigured) "EDIT SETUP" else "SETUP",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun BotSetupDialog(
-    currentChatId: String,
-    currentUsername: String,
-    onDismiss: () -> Unit,
-    onSave: (chatId: String, username: String) -> Unit
-) {
-    var inputChatId by remember { mutableStateOf(currentChatId) }
-    var inputUsername by remember { mutableStateOf(currentUsername) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            Button(
-                onClick = { onSave(inputChatId, inputUsername) },
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
-                shape = RoundedCornerShape(6.dp)
-            ) {
-                Text("SAVE", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            OutlinedButton(
-                onClick = onDismiss,
-                shape = RoundedCornerShape(6.dp)
-            ) {
-                Text("CANCEL", color = TextSecondary)
-            }
-        },
-        title = {
-            Text(
-                text = "🤖 Telegram Bot Setup",
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                color = TextPrimary
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Enter your Telegram Chat ID and Telegram Username below. Received OTPs will be automatically forwarded to your personal bot and group log.",
-                    fontSize = 13.sp,
-                    color = TextSecondary
-                )
-
-                OutlinedTextField(
-                    value = inputChatId,
-                    onValueChange = { inputChatId = it },
-                    label = { Text("Telegram Chat ID") },
-                    placeholder = { Text("e.g. 123456789") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = PrimaryFbBlue,
-                        unfocusedBorderColor = BorderColor,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = inputUsername,
-                    onValueChange = { inputUsername = it },
-                    label = { Text("Telegram Username") },
-                    placeholder = { Text("e.g. @arafat_bhai07") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = PrimaryFbBlue,
-                        unfocusedBorderColor = BorderColor,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(6.dp),
-                    color = Color(0xFF2A2010),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB300))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = "⚠️ IMPORTANT INSTRUCTIONS:",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = Color(0xFFFFD54F)
-                        )
-                        Text(
-                            text = "1. Start the Telegram Bot first: @FB_TOOL_OTP_BOT\n2. Group Forwarding is pre-configured to Group Log ID: -1004430983810 (Phone numbers in group will be auto-masked e.g. 880193**6272)",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFFFFF8E1)
-                        )
-                    }
-                }
-            }
-        },
-        containerColor = CardBackground,
-        shape = RoundedCornerShape(12.dp)
-    )
-}
 
 @Composable
 private fun LiveStatusCard(

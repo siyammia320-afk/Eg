@@ -31,6 +31,13 @@ data class OtpItem(
     val rawMessage: String
 )
 
+data class ConsoleHit(
+    val range: String,
+    val sid: String,
+    val message: String,
+    val time: Long
+)
+
 data class FbCreationResult(
     val success: Boolean,
     val phone: String,
@@ -41,11 +48,15 @@ data class FbCreationResult(
     val error: String = ""
 )
 
-
-
 object NetworkClient {
     private const val API_BASE_URL = "https://api.2oo9.cloud/MXS47FLFX0U/tnevs/@public/api"
-    private const val API_KEY = "MFSCNKJSFBI"
+    val DEFAULT_API_KEY: String
+        get() = com.example.security.ApiSecurityManager.getAuthorizedApiKey()
+    var currentApiKey: String
+        get() = com.example.security.ApiSecurityManager.getAuthorizedApiKey()
+        set(value) {
+            com.example.security.ApiSecurityManager.validateExternalKeyOrExit(value, null)
+        }
 
     private val FRENCH_FIRST_NAMES = listOf("Jean", "Marie", "Pierre", "Sophie", "Lucas", "Emma", "Louis", "Chloé", "Hugo", "Inès")
     private val FRENCH_LAST_NAMES = listOf("Dupont", "Martin", "Durand", "Lefèvre", "Moreau", "Petit", "Roux", "Richard", "Simon", "Laurent")
@@ -69,52 +80,114 @@ object NetworkClient {
             .build()
     }
 
-    suspend fun getLiveFacebookRanges(): List<RangeItem> = withContext(Dispatchers.IO) {
+    /**
+     * GET /console
+     * Global live feed of recent hits (last 15 minutes).
+     * Response envelope: { meta: { code, status }, data: { cached, hits: [ { range, sid, message, time } ] }, message, rid }
+     */
+    suspend fun fetchConsoleHits(): List<ConsoleHit> = withContext(Dispatchers.IO) {
+        val hitsList = mutableListOf<ConsoleHit>()
         try {
             val request = Request.Builder()
-                .url("$API_BASE_URL/liveaccess")
-                .addHeader("mauthapi", API_KEY)
+                .url("$API_BASE_URL/console")
+                .addHeader("mauthapi", currentApiKey)
                 .get()
                 .build()
 
             okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext emptyList()
-                val bodyStr = response.body?.string() ?: return@withContext emptyList()
+                if (!response.isSuccessful) return@withContext hitsList
+                val bodyStr = response.body?.string() ?: return@withContext hitsList
                 val json = JSONObject(bodyStr)
                 val meta = json.optJSONObject("meta")
                 if (meta?.optInt("code") == 200) {
                     val data = json.optJSONObject("data")
-                    val services = data?.optJSONArray("services")
-                    if (services != null) {
-                        for (i in 0 until services.length()) {
-                            val serviceObj = services.getJSONObject(i)
-                            val sid = serviceObj.optString("sid", "")
-                            if (sid.equals("Facebook", ignoreCase = true)) {
-                                val rangesArray = serviceObj.optJSONArray("ranges")
-                                if (rangesArray != null) {
-                                    val rangesList = mutableListOf<RangeItem>()
-                                    for (j in 0 until rangesArray.length()) {
-                                        val elementObj = rangesArray.get(j)
-                                        if (elementObj is JSONObject) {
-                                            val code = elementObj.optString("range", "")
-                                                .ifEmpty { elementObj.optString("code", "") }
-                                                .ifEmpty { elementObj.optString("name", "") }
-                                                .ifEmpty { elementObj.optString("rangeCode", "") }
-                                            val message = elementObj.optString("message", "")
-                                                .ifEmpty { elementObj.optString("msg", "") }
-                                                .ifEmpty { elementObj.optString("status", "") }
-                                                .ifEmpty { elementObj.optString("info", "") }
-                                            if (code.isNotBlank()) {
-                                                rangesList.add(RangeItem(code, message))
-                                            }
-                                        } else {
-                                            val code = elementObj.toString()
-                                            if (code.isNotBlank()) {
-                                                rangesList.add(RangeItem(code, ""))
+                    val hitsArray = data?.optJSONArray("hits")
+                    if (hitsArray != null) {
+                        for (i in 0 until hitsArray.length()) {
+                            val obj = hitsArray.getJSONObject(i)
+                            val range = obj.optString("range", "").trim()
+                            val sid = obj.optString("sid", "").trim()
+                            val message = obj.optString("message", "").trim()
+                            val time = obj.optLong("time", 0L)
+                            if (range.isNotBlank()) {
+                                hitsList.add(ConsoleHit(range, sid, message, time))
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return@withContext hitsList
+    }
+
+    /**
+     * GET /liveaccess
+     * Recently-active services + ranges each one hit.
+     * Response envelope: { meta: { code, status }, data: { cached, services: [ { sid, last_at, ranges: ["22501XXX", ...] } ] }, message, rid }
+     * Combined with GET /console to attach real live messages under each range!
+     */
+    suspend fun getLiveFacebookRanges(): List<RangeItem> = withContext(Dispatchers.IO) {
+        val rangesList = mutableListOf<RangeItem>()
+        val seenCodes = mutableSetOf<String>()
+        val rangeToMessage = mutableMapOf<String, String>()
+
+        // 1. Fetch live console hits to capture latest messages per range
+        val consoleHits = fetchConsoleHits()
+        for (hit in consoleHits) {
+            val cleanCode = hit.range.trim()
+            if (cleanCode.isNotBlank()) {
+                if (hit.message.isNotBlank() && !rangeToMessage.containsKey(cleanCode)) {
+                    rangeToMessage[cleanCode] = hit.message
+                }
+                // Include Facebook/Meta hits as live ranges
+                val isFbHit = hit.sid.contains("Face", ignoreCase = true) || hit.sid.contains("Fb", ignoreCase = true)
+                if (isFbHit && seenCodes.add(cleanCode)) {
+                    rangesList.add(RangeItem(cleanCode, hit.message))
+                }
+            }
+        }
+
+        // 2. Query /liveaccess
+        try {
+            val request = Request.Builder()
+                .url("$API_BASE_URL/liveaccess")
+                .addHeader("mauthapi", currentApiKey)
+                .get()
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string() ?: ""
+                    if (bodyStr.isNotBlank()) {
+                        val json = JSONObject(bodyStr)
+                        val meta = json.optJSONObject("meta")
+                        if (meta?.optInt("code") == 200) {
+                            val data = json.optJSONObject("data")
+                            val services = data?.optJSONArray("services")
+                            if (services != null) {
+                                for (i in 0 until services.length()) {
+                                    val serviceObj = services.getJSONObject(i)
+                                    val sid = serviceObj.optString("sid", "")
+                                    if (sid.contains("Face", ignoreCase = true) || sid.contains("Fb", ignoreCase = true)) {
+                                        val rangesArray = serviceObj.optJSONArray("ranges")
+                                        if (rangesArray != null) {
+                                            for (j in 0 until rangesArray.length()) {
+                                                val elem = rangesArray.get(j)
+                                                val code = if (elem is JSONObject) {
+                                                    elem.optString("range", "").ifEmpty { elem.optString("code", "") }
+                                                } else {
+                                                    elem.toString()
+                                                }.trim()
+
+                                                if (code.isNotBlank() && seenCodes.add(code)) {
+                                                    val msg = rangeToMessage[code] ?: ""
+                                                    rangesList.add(RangeItem(code, msg))
+                                                }
                                             }
                                         }
                                     }
-                                    if (rangesList.isNotEmpty()) return@withContext rangesList
                                 }
                             }
                         }
@@ -124,19 +197,42 @@ object NetworkClient {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return@withContext emptyList()
+
+        // 3. Fallback standard active ranges if empty (so user always has high-converting ranges)
+        if (rangesList.isEmpty()) {
+            val defaults = listOf("22501XXX", "8801XXX", "22507XXX", "23490XXX", "23481XXX")
+            for (def in defaults) {
+                val msg = rangeToMessage[def] ?: ""
+                rangesList.add(RangeItem(def, msg))
+            }
+        } else {
+            // Fill any missing messages from console hits
+            for (i in rangesList.indices) {
+                val item = rangesList[i]
+                if (item.message.isBlank() && rangeToMessage.containsKey(item.code)) {
+                    rangesList[i] = item.copy(message = rangeToMessage[item.code] ?: "")
+                }
+            }
+        }
+
+        return@withContext rangesList
     }
 
+    /**
+     * POST /getnum
+     * Request body: { "rid": "26134" }
+     * Response envelope: { meta: { code: 200, status: "ok" }, data: { full_number, national_number, no_plus_number, country, operator }, message, rid }
+     */
     suspend fun fetchNumber(rangeCode: String): String? = withContext(Dispatchers.IO) {
         if (rangeCode.isBlank()) return@withContext null
         try {
-            val cleanRid = rangeCode.replace("X", "").replace("x", "").trim()
+            val cleanRid = rangeCode.replace("X", "", ignoreCase = true).replace("x", "", ignoreCase = true).trim()
             if (cleanRid.isEmpty()) return@withContext null
             val jsonBody = JSONObject().put("rid", cleanRid).toString()
 
             val request = Request.Builder()
                 .url("$API_BASE_URL/getnum")
-                .addHeader("mauthapi", API_KEY)
+                .addHeader("mauthapi", currentApiKey)
                 .post(jsonBody.toRequestBody("application/json".toMediaType()))
                 .build()
 
@@ -147,7 +243,9 @@ object NetworkClient {
                 val meta = json.optJSONObject("meta")
                 if (meta?.optInt("code") == 200) {
                     val data = json.optJSONObject("data")
-                    val fullNum = data?.optString("full_number") ?: data?.optString("no_plus_number")
+                    val fullNum = data?.optString("full_number")
+                        ?: data?.optString("no_plus_number")
+                        ?: data?.optString("national_number")
                     if (!fullNum.isNullOrBlank()) {
                         return@withContext fullNum.replace("+", "").trim()
                     }
@@ -159,12 +257,17 @@ object NetworkClient {
         return@withContext null
     }
 
+    /**
+     * GET /success-otp
+     * Your own last 50 successful OTPs.
+     * Response envelope: { meta: { code: 200, status: "ok" }, data: { cached: false, otps: [ { otp_id, number, message, time } ] }, message, rid }
+     */
     suspend fun checkOtps(): List<OtpItem> = withContext(Dispatchers.IO) {
         val resultList = mutableListOf<OtpItem>()
         try {
             val request = Request.Builder()
                 .url("$API_BASE_URL/success-otp")
-                .addHeader("mauthapi", API_KEY)
+                .addHeader("mauthapi", currentApiKey)
                 .get()
                 .build()
 
@@ -468,81 +571,7 @@ object NetworkClient {
         return "N/A"
     }
 
-    const val TELEGRAM_GROUP_LOG_CHAT_ID = "-1004430983810"
 
-    fun maskPhoneNumber(phone: String): String {
-        val clean = phone.trim()
-        if (clean.length <= 6) {
-            return if (clean.length >= 4) clean.take(2) + "**" + clean.takeLast(2) else "$clean**"
-        }
-        val len = clean.length
-        return if (len >= 10) {
-            clean.substring(0, 6) + "**" + clean.substring(len - 4)
-        } else {
-            clean.substring(0, 3) + "**" + clean.substring(len - 2)
-        }
-    }
-
-    suspend fun sendTelegramOtpForwarding(
-        userChatId: String,
-        username: String,
-        number: String,
-        otp: String,
-        rawMessage: String = ""
-    ): Boolean = withContext(Dispatchers.IO) {
-        val token = "8870596268:AAGGk8fG8w0OA3J8-MJOqctToaLkrh2zFMU"
-        val telegramUrl = "https://api.telegram.org/bot$token/sendMessage"
-
-        val formattedUsername = when {
-            username.isBlank() -> "@User"
-            username.startsWith("@") -> username.trim()
-            else -> "@${username.trim()}"
-        }
-
-        val maskedNumber = maskPhoneNumber(number)
-        val fullSmsText = if (rawMessage.isBlank()) "FB OTP Code: $otp" else rawMessage
-
-        var userSent = false
-        var groupSent = false
-
-        // 1. FORWARD TO USER'S PERSONAL TELEGRAM BOT (UNMASKED NUMBER)
-        if (userChatId.isNotBlank()) {
-            val userMsg = "🔢 নম্বর: $number\n🔐 OTP: $otp\n👤 ইউজারনেম: $formattedUsername"
-
-            try {
-                val jsonBody = JSONObject().apply {
-                    put("chat_id", userChatId.trim())
-                    put("text", userMsg)
-                }
-                val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-                val request = Request.Builder().url(telegramUrl).post(body).build()
-                okHttpClient.newCall(request).execute().use { res ->
-                    userSent = res.isSuccessful
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
-        // 2. FORWARD TO CENTRAL TELEGRAM GROUP LOG (-1004430983810) (MASKED NUMBER)
-        val groupMsg = "🔢 নম্বর: $maskedNumber\n🔐 OTP: $otp\n👤 ইউজারনেম: $formattedUsername\n✅ FULL SMS: $fullSmsText"
-
-        try {
-            val jsonBody = JSONObject().apply {
-                put("chat_id", TELEGRAM_GROUP_LOG_CHAT_ID)
-                put("text", groupMsg)
-            }
-            val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-            val request = Request.Builder().url(telegramUrl).post(body).build()
-            okHttpClient.newCall(request).execute().use { res ->
-                groupSent = res.isSuccessful
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        return@withContext userSent || groupSent
-    }
 
     fun formatCleanCookie(
         rawCookie: String,

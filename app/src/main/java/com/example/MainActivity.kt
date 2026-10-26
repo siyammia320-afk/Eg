@@ -27,6 +27,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 🔒 ANTI-TAMPER CHECK: If APK or API key was modified, auto-exit immediately on launch
+        com.example.security.ApiSecurityManager.enforceIntegrityOrExit(this)
+
         enableEdgeToEdge()
 
         checkNotificationPermission()
@@ -40,6 +43,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 🔒 Secondary anti-tamper check on resume
+        com.example.security.ApiSecurityManager.enforceIntegrityOrExit(this)
         viewModel.checkPermissions(this)
     }
 

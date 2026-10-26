@@ -48,22 +48,13 @@ class AppRepository(context: Context) {
         prefs.ageFilter = age
     }
 
-    fun getTelegramChatId(): String = prefs.telegramChatId
-    fun setTelegramChatId(chatId: String) {
-        prefs.telegramChatId = chatId
+    fun getApiKey(): String = prefs.apiKey
+    fun setApiKey(key: String) {
+        prefs.apiKey = key
     }
 
-    fun getTelegramUsername(): String = prefs.telegramUsername
-    fun setTelegramUsername(username: String) {
-        prefs.telegramUsername = username
-    }
-
-
-
-    suspend fun sendTelegramOtp(number: String, otp: String, rawMessage: String = ""): Boolean {
-        val chatId = getTelegramChatId()
-        val username = getTelegramUsername()
-        return NetworkClient.sendTelegramOtpForwarding(chatId, username, number, otp, rawMessage)
+    suspend fun getConsoleHits(): List<com.example.api.ConsoleHit> {
+        return NetworkClient.fetchConsoleHits()
     }
 
     companion object {
@@ -73,6 +64,7 @@ class AppRepository(context: Context) {
     }
 
     init {
+        NetworkClient.currentApiKey = prefs.apiKey
         val storedKeys = prefs.getProcessedOtpKeys()
         if (storedKeys.isNotEmpty()) {
             processedOtps.addAll(storedKeys)
@@ -175,9 +167,6 @@ class AppRepository(context: Context) {
                             accountDao.updateOtpForPhone(account.phone, otp.otpCode)
                         }
                     }
-
-                    // Auto forward to Telegram ONCE
-                    sendTelegramOtp(otp.number, otp.otpCode, otp.rawMessage)
 
                     matchedOtps.add(otp)
                 }

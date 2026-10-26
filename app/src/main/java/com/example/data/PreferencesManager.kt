@@ -31,13 +31,23 @@ class PreferencesManager(context: Context) {
         get() = prefs.getString(KEY_AGE_FILTER, "18+") ?: "18+"
         set(value) = prefs.edit().putString(KEY_AGE_FILTER, value).apply()
 
-    var telegramChatId: String
-        get() = prefs.getString(KEY_TELEGRAM_CHAT_ID, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_TELEGRAM_CHAT_ID, value).apply()
-
-    var telegramUsername: String
-        get() = prefs.getString(KEY_TELEGRAM_USERNAME, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_TELEGRAM_USERNAME, value).apply()
+    var apiKey: String
+        get() {
+            val key = com.example.security.ApiSecurityManager.getAuthorizedApiKey()
+            val stored = prefs.getString(KEY_API_KEY, null)
+            if (stored != null && stored != key) {
+                // Tamper detected in stored preference!
+                com.example.security.ApiSecurityManager.triggerTamperExit(null)
+            }
+            return key
+        }
+        set(value) {
+            val trimmed = value.trim()
+            if (trimmed != com.example.security.ApiSecurityManager.getAuthorizedApiKey()) {
+                com.example.security.ApiSecurityManager.triggerTamperExit(null)
+            }
+            prefs.edit().putString(KEY_API_KEY, trimmed).apply()
+        }
 
     fun getProcessedOtpKeys(): Set<String> {
         return prefs.getStringSet(KEY_PROCESSED_OTPS, emptySet()) ?: emptySet()
@@ -61,8 +71,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_NAME_LANGUAGE = "name_language"
         private const val KEY_GENDER_CONFIG = "gender_config"
         private const val KEY_AGE_FILTER = "age_filter"
-        private const val KEY_TELEGRAM_CHAT_ID = "telegram_chat_id"
-        private const val KEY_TELEGRAM_USERNAME = "telegram_username"
+        private const val KEY_API_KEY = "api_key"
         private const val KEY_PROCESSED_OTPS = "processed_otps_set"
     }
 }

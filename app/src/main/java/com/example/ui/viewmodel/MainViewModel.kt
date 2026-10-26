@@ -33,8 +33,7 @@ data class MainUiState(
     val nameLanguage: String = "BANGLA",
     val genderConfig: String = "FEMALE",
     val ageFilter: String = "18+",
-    val telegramChatId: String = "",
-    val telegramUsername: String = "",
+    val apiKey: String = "",
     val statusMessage: String? = null
 )
 
@@ -48,6 +47,7 @@ class MainViewModel(
     private val autoCopiedOtps = mutableSetOf<String>()
 
     init {
+        com.example.security.ApiSecurityManager.enforceIntegrityOrExit(null)
         loadInitialData()
         observeAccounts()
         startAutomaticOtpPolling()
@@ -76,23 +76,52 @@ class MainViewModel(
                         }
                     }
 
-                    // 2. Fetch and map ALL live incoming messages to ranges dynamically (regardless of user's active list)
-                    val allNetworkOtps = com.example.api.NetworkClient.checkOtps()
-                    if (allNetworkOtps.isNotEmpty()) {
-                        val currentRanges = _uiState.value.facebookRanges
-                        if (currentRanges.isNotEmpty()) {
-                            val newMessages = _uiState.value.rangeMessages.toMutableMap()
-                            for (otp in allNetworkOtps) {
-                                val cleanPhone = otp.number.replace(Regex("[^0-9]"), "")
-                                for (range in currentRanges) {
-                                    val cleanRange = range.code.replace("X", "", ignoreCase = true).replace("x", "", ignoreCase = true).trim()
-                                    if (cleanRange.isNotEmpty() && cleanPhone.startsWith(cleanRange)) {
-                                        newMessages[range.code] = otp.rawMessage.ifEmpty { "OTP: ${otp.otpCode}" }
+                    // 2. Fetch live hits from GET /console to attach messages to every range
+                    val currentRanges = _uiState.value.facebookRanges
+                    val newMessages = _uiState.value.rangeMessages.toMutableMap()
+                    var hasNewMessages = false
+
+                    val consoleHits = repository.getConsoleHits()
+                    for (hit in consoleHits) {
+                        val cleanCode = hit.range.trim()
+                        if (cleanCode.isNotBlank() && hit.message.isNotBlank()) {
+                            if (newMessages[cleanCode] != hit.message) {
+                                newMessages[cleanCode] = hit.message
+                                hasNewMessages = true
+                            }
+                            // Match partial range format like 22501XXX
+                            for (range in currentRanges) {
+                                val prefix = range.code.replace("X", "", ignoreCase = true).replace("x", "", ignoreCase = true).trim()
+                                if (prefix.isNotEmpty() && cleanCode.startsWith(prefix)) {
+                                    if (newMessages[range.code] != hit.message) {
+                                        newMessages[range.code] = hit.message
+                                        hasNewMessages = true
                                     }
                                 }
                             }
-                            _uiState.value = _uiState.value.copy(rangeMessages = newMessages)
                         }
+                    }
+
+                    // 3. Also check /success-otp and match against ranges
+                    val allNetworkOtps = com.example.api.NetworkClient.checkOtps()
+                    if (allNetworkOtps.isNotEmpty() && currentRanges.isNotEmpty()) {
+                        for (otp in allNetworkOtps) {
+                            val cleanPhone = otp.number.replace(Regex("[^0-9]"), "")
+                            for (range in currentRanges) {
+                                val cleanRange = range.code.replace("X", "", ignoreCase = true).replace("x", "", ignoreCase = true).trim()
+                                if (cleanRange.isNotEmpty() && cleanPhone.startsWith(cleanRange)) {
+                                    val otpMsg = otp.rawMessage.ifEmpty { "OTP: ${otp.otpCode}" }
+                                    if (newMessages[range.code] != otpMsg) {
+                                        newMessages[range.code] = otpMsg
+                                        hasNewMessages = true
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (hasNewMessages) {
+                        _uiState.value = _uiState.value.copy(rangeMessages = newMessages)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -109,8 +138,7 @@ class MainViewModel(
         val lang = repository.getNameLanguage()
         val gender = repository.getGenderConfig()
         val age = repository.getAgeFilter()
-        val chatId = repository.getTelegramChatId()
-        val username = repository.getTelegramUsername()
+        val key = repository.getApiKey()
 
         _uiState.value = _uiState.value.copy(
             savedPassword = pass,
@@ -119,26 +147,10 @@ class MainViewModel(
             nameLanguage = lang,
             genderConfig = gender,
             ageFilter = age,
-            telegramChatId = chatId,
-            telegramUsername = username
+            apiKey = key
         )
 
         refreshFacebookRanges()
-    }
-
-    fun setTelegramBotConfig(chatId: String, username: String) {
-        val cleanChatId = chatId.trim()
-        val cleanUser = when {
-            username.isBlank() -> ""
-            username.startsWith("@") -> username.trim()
-            else -> "@${username.trim()}"
-        }
-        repository.setTelegramChatId(cleanChatId)
-        repository.setTelegramUsername(cleanUser)
-        _uiState.value = _uiState.value.copy(
-            telegramChatId = cleanChatId,
-            telegramUsername = cleanUser
-        )
     }
 
     fun setNameLanguage(lang: String) {
@@ -181,6 +193,20 @@ class MainViewModel(
         )
     }
 
+    fun updateApiKey(newKey: String) {
+        val trimmed = newKey.trim()
+        if (trimmed != com.example.security.ApiSecurityManager.getAuthorizedApiKey()) {
+            com.example.security.ApiSecurityManager.triggerTamperExit(null)
+            return
+        }
+        repository.setApiKey(trimmed)
+        _uiState.value = _uiState.value.copy(
+            apiKey = trimmed,
+            statusMessage = "API Key Verified: $trimmed"
+        )
+        refreshFacebookRanges()
+    }
+
     fun refreshFacebookRanges() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoadingRanges = true)
@@ -191,9 +217,13 @@ class MainViewModel(
 
             repository.setSelectedRange(newSelected)
 
+            val messagesMap = ranges.filter { it.message.isNotBlank() }
+                .associate { it.code to it.message }
+
             _uiState.value = _uiState.value.copy(
                 facebookRanges = ranges,
                 selectedRange = newSelected,
+                rangeMessages = _uiState.value.rangeMessages + messagesMap,
                 isLoadingRanges = false
             )
         }
