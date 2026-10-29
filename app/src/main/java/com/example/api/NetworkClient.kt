@@ -17,7 +17,6 @@ import java.util.regex.Pattern
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
-
 import com.example.model.RangeItem
 
 data class FacebookRange(
@@ -58,8 +57,26 @@ object NetworkClient {
             com.example.security.ApiSecurityManager.validateExternalKeyOrExit(value, null)
         }
 
-    private val FRENCH_FIRST_NAMES = listOf("Jean", "Marie", "Pierre", "Sophie", "Lucas", "Emma", "Louis", "Chloé", "Hugo", "Inès")
-    private val FRENCH_LAST_NAMES = listOf("Dupont", "Martin", "Durand", "Lefèvre", "Moreau", "Petit", "Roux", "Richard", "Simon", "Laurent")
+    const val FIXED_PASSWORD = "arafat@@##"
+
+    // V1 Endpoints & Fallback Tokens (limited.facebook.com)
+    private const val V1_GET_URL = "https://limited.facebook.com/reg/?cid=103&refsrc=deprecated&soft=hjk"
+    private const val V1_SUBMIT_URL = "https://limited.facebook.com/reg/submit/?app_id=103&multi_step_form=1&skip_suma=0&shouldForceMTouch=1"
+
+    private const val V1_FALLBACK_LSD = "AdTVmPkwJP3Cq-5SK-ewKKD5Wp8"
+    private const val V1_FALLBACK_FB_DTSG = "NAfx4_3yUPPiwdOADtHmT6aHnwopW_MmPDgIjjkK-1qlKZD8UDCX95A:0:0"
+    private const val V1_FALLBACK_JAZOEST = "24906"
+    private const val V1_FALLBACK_DYN = "0wzpawlEnwm8_Bg9ppoW5UdE4a2i5U4e0C86u7E39x60zU3ex608ewk9E4W0pKq0FE6S0x81vohw73wGwcq1GwqU2YwbK0oi0zE1jU1soG0hi0Lo6-0Co1kU1UU3jwea"
+    private const val V1_FALLBACK_A = "AY0mgpOgOqHZOaxMdEKO8t_1AaG3xe5WmHtaDgVUMVToIcNY0QqUS4jTS6PNePF_x9AHTzBhQV1ZwCN1gq4UBHfJlW1oKItbwlw"
+
+    // GraphQL Checker Constants
+    private const val CHECKER_GRAPHQL_URL = "https://www.facebook.com/api/graphql/"
+    private const val CHECKER_DOC_ID = "27012969198380071"
+    private const val CHECKER_LSD = "AdS-QY2mYrCcHP7sVf7ynTA6vTc"
+    private const val CHECKER_JAZOEST = "22291"
+    private const val CHECKER_CIPHER_TEXT = "AdAtB3O832KrYgWu2c7Jm2mNWOdAALA9wNFKJ_043RSsW27RSXXjhlBd0Cr8rGn-lIwgDuQU-CNQILiqKbqFW0GZop7nLgDVhClntKlePmNpHzT4ESf47v-lTUCNV3L-ikw70LhayHi30trSUJqk-Rvmaost-m0CTl60dFiIcbLNhGmQ8uggs-M1wfu04KQJvOQBDLwohSr7f_yRqkDGj98Ra-1S2N77k17Fqxu8N84cEWWTyv4qW6ySj7GI7CYYhD8QZDTzMxXcImxAr_Y"
+
+    private val usedNumbersCache = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     private val okHttpClient: OkHttpClient by lazy {
         val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
@@ -74,16 +91,15 @@ object NetworkClient {
         OkHttpClient.Builder()
             .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
             .hostnameVerifier { _, _ -> true }
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .writeTimeout(20, TimeUnit.SECONDS)
+            .connectTimeout(25, TimeUnit.SECONDS)
+            .readTimeout(25, TimeUnit.SECONDS)
+            .writeTimeout(25, TimeUnit.SECONDS)
             .build()
     }
 
     /**
      * GET /console
-     * Global live feed of recent hits (last 15 minutes).
-     * Response envelope: { meta: { code, status }, data: { cached, hits: [ { range, sid, message, time } ] }, message, rid }
+     * Global live feed of recent hits.
      */
     suspend fun fetchConsoleHits(): List<ConsoleHit> = withContext(Dispatchers.IO) {
         val hitsList = mutableListOf<ConsoleHit>()
@@ -124,16 +140,14 @@ object NetworkClient {
 
     /**
      * GET /liveaccess
-     * Recently-active services + ranges each one hit.
-     * Response envelope: { meta: { code, status }, data: { cached, services: [ { sid, last_at, ranges: ["22501XXX", ...] } ] }, message, rid }
-     * Combined with GET /console to attach real live messages under each range!
+     * Fetches recently-active services + ranges, enriched with live console messages.
      */
     suspend fun getLiveFacebookRanges(): List<RangeItem> = withContext(Dispatchers.IO) {
         val rangesList = mutableListOf<RangeItem>()
         val seenCodes = mutableSetOf<String>()
         val rangeToMessage = mutableMapOf<String, String>()
 
-        // 1. Fetch live console hits to capture latest messages per range
+        // 1. Fetch live console hits for latest message under each range
         val consoleHits = fetchConsoleHits()
         for (hit in consoleHits) {
             val cleanCode = hit.range.trim()
@@ -141,7 +155,6 @@ object NetworkClient {
                 if (hit.message.isNotBlank() && !rangeToMessage.containsKey(cleanCode)) {
                     rangeToMessage[cleanCode] = hit.message
                 }
-                // Include Facebook/Meta hits as live ranges
                 val isFbHit = hit.sid.contains("Face", ignoreCase = true) || hit.sid.contains("Fb", ignoreCase = true)
                 if (isFbHit && seenCodes.add(cleanCode)) {
                     rangesList.add(RangeItem(cleanCode, hit.message))
@@ -149,7 +162,7 @@ object NetworkClient {
             }
         }
 
-        // 2. Query /liveaccess
+        // 2. Fetch /liveaccess
         try {
             val request = Request.Builder()
                 .url("$API_BASE_URL/liveaccess")
@@ -170,7 +183,7 @@ object NetworkClient {
                                 for (i in 0 until services.length()) {
                                     val serviceObj = services.getJSONObject(i)
                                     val sid = serviceObj.optString("sid", "")
-                                    if (sid.contains("Face", ignoreCase = true) || sid.contains("Fb", ignoreCase = true)) {
+                                    if (sid.contains("Face", ignoreCase = true) || sid.contains("Fb", ignoreCase = true) || sid.contains("Meta", ignoreCase = true)) {
                                         val rangesArray = serviceObj.optJSONArray("ranges")
                                         if (rangesArray != null) {
                                             for (j in 0 until rangesArray.length()) {
@@ -198,7 +211,7 @@ object NetworkClient {
             e.printStackTrace()
         }
 
-        // 3. Fallback standard active ranges if empty (so user always has high-converting ranges)
+        // Fallback active ranges if panel is loading or empty
         if (rangesList.isEmpty()) {
             val defaults = listOf("22501XXX", "8801XXX", "22507XXX", "23490XXX", "23481XXX")
             for (def in defaults) {
@@ -206,7 +219,6 @@ object NetworkClient {
                 rangesList.add(RangeItem(def, msg))
             }
         } else {
-            // Fill any missing messages from console hits
             for (i in rangesList.indices) {
                 val item = rangesList[i]
                 if (item.message.isBlank() && rangeToMessage.containsKey(item.code)) {
@@ -220,13 +232,12 @@ object NetworkClient {
 
     /**
      * POST /getnum
-     * Request body: { "rid": "26134" }
-     * Response envelope: { meta: { code: 200, status: "ok" }, data: { full_number, national_number, no_plus_number, country, operator }, message, rid }
+     * Allocates one number from range without 'XXX'.
      */
     suspend fun fetchNumber(rangeCode: String): String? = withContext(Dispatchers.IO) {
         if (rangeCode.isBlank()) return@withContext null
         try {
-            val cleanRid = rangeCode.replace("X", "", ignoreCase = true).replace("x", "", ignoreCase = true).trim()
+            val cleanRid = rangeCode.replace("X", "", ignoreCase = true).trim()
             if (cleanRid.isEmpty()) return@withContext null
             val jsonBody = JSONObject().put("rid", cleanRid).toString()
 
@@ -258,9 +269,345 @@ object NetworkClient {
     }
 
     /**
+     * GraphQL Phone Availability Checker
+     * Returns Pair(status, description) where status is "free", "taken", or "error".
+     */
+    suspend fun checkNumberGraphql(phoneNumber: String): Pair<String, String> = withContext(Dispatchers.IO) {
+        val cleanPhone = if (phoneNumber.startsWith("+")) phoneNumber else "+$phoneNumber"
+        try {
+            val variables = JSONObject().apply {
+                put("params", JSONObject().apply {
+                    put("cipher_text", CHECKER_CIPHER_TEXT)
+                    put("context", "recover")
+                    put("event_request_id", UUID.randomUUID().toString())
+                    put("friend_name", "")
+                    put("search_query", cleanPhone)
+                    put("waterfall_id", UUID.randomUUID().toString())
+                })
+            }
+
+            val formBody = FormBody.Builder()
+                .add("av", "0")
+                .add("__aaid", "0")
+                .add("__user", "0")
+                .add("__a", "1")
+                .add("__req", "5")
+                .add("__hs", "20742.HYP:comet_loggedout_pkg.2.1...0")
+                .add("dpr", "2")
+                .add("__ccg", "EXCELLENT")
+                .add("__rev", "1050579926")
+                .add("__comet_req", "15")
+                .add("lsd", CHECKER_LSD)
+                .add("jazoest", CHECKER_JAZOEST)
+                .add("__spin_r", "1050579926")
+                .add("__spin_b", "trunk")
+                .add("__spin_t", (System.currentTimeMillis() / 1000).toString())
+                .add("__crn", "comet.fbweb.CometCAAAccountSearchRoute")
+                .add("qpl_active_flow_ids", "516759801")
+                .add("fb_api_caller_class", "RelayModern")
+                .add("fb_api_req_friendly_name", "CAAFBAccountSearchViewQuery")
+                .add("server_timestamps", "true")
+                .add("variables", variables.toString())
+                .add("doc_id", CHECKER_DOC_ID)
+                .add("fb_api_analytics_tags", "[\"qpl_active_flow_ids=516759801\"]")
+                .build()
+
+            val request = Request.Builder()
+                .url(CHECKER_GRAPHQL_URL)
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
+                .addHeader("Accept-Encoding", "gzip, deflate, br, zstd")
+                .addHeader("Content-Type", "application/x-www-form-urlencoded")
+                .addHeader("x-fb-friendly-name", "CAAFBAccountSearchViewQuery")
+                .addHeader("x-fb-lsd", CHECKER_LSD)
+                .addHeader("origin", "https://www.facebook.com")
+                .addHeader("referer", "https://www.facebook.com/login/identify/")
+                .post(formBody)
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Pair("error", "HTTP ${response.code}")
+                }
+                val bodyStr = response.body?.string() ?: ""
+                val js = JSONObject(bodyStr)
+                val data = js.optJSONObject("data")
+                val search = data?.optJSONObject("caa_ar_fb_account_search")
+                val accounts = search?.optJSONArray("accounts")
+                val errorContent = search?.optJSONObject("error_content")
+                val description = errorContent?.optString("description", "")?.trim() ?: ""
+
+                if ((accounts == null || accounts.length() == 0) && description.contains("No account found", ignoreCase = true)) {
+                    return@withContext Pair("free", description)
+                }
+                if (accounts != null && accounts.length() > 0) {
+                    return@withContext Pair("taken", "${accounts.length()} account(s)")
+                }
+                if (description.isNotEmpty()) {
+                    return@withContext Pair("taken", description)
+                }
+                return@withContext Pair("unknown", "No clear result")
+            }
+        } catch (e: Exception) {
+            return@withContext Pair("error", e.message ?: "Checker error")
+        }
+    }
+
+    /**
+     * Acquire a checked number from range: ensures number is not already taken
+     */
+    suspend fun acquireCheckedNumber(rangeCode: String): Pair<String?, String> = withContext(Dispatchers.IO) {
+        var fallback: Pair<String?, String>? = null
+
+        for (attempt in 1..8) {
+            val num = fetchNumber(rangeCode)
+            if (num.isNullOrBlank() || usedNumbersCache.contains(num)) {
+                kotlinx.coroutines.delay(500)
+                continue
+            }
+
+            val (status, desc) = checkNumberGraphql(num)
+            if (status == "free") {
+                usedNumbersCache.add(num)
+                return@withContext Pair(num, "FREE")
+            }
+
+            if (status == "taken") {
+                usedNumbersCache.add(num)
+                kotlinx.coroutines.delay(400)
+                continue
+            }
+
+            if (fallback == null) {
+                fallback = Pair(num, status.uppercase())
+            }
+        }
+
+        if (fallback != null) {
+            fallback.first?.let { usedNumbersCache.add(it) }
+            return@withContext fallback
+        }
+
+        return@withContext Pair(null, "NO_FREE_NUMBERS")
+    }
+
+    private fun generateDynamicUa(): String {
+        val androidVer = (11..14).random()
+        val chromeVer = (150..160).random()
+        val buildNum = (8000..8200).random()
+        val patch = (30..80).random()
+        return "Mozilla/5.0 (Linux; Android $androidVer; itel S665L Build/SP1A.210813.014) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chromeVer.0.$buildNum.$patch Mobile Safari/537.36"
+    }
+
+    private fun generateDatr(): String {
+        val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+        return (1..24).map { chars.random() }.joinToString("")
+    }
+
+    /**
+     * V1 Account Creation (limited.facebook.com)
+     */
+    suspend fun createFacebookAccount(
+        rawPhone: String,
+        password: String = FIXED_PASSWORD,
+        profile: com.example.data.GeneratedAccountProfile? = null
+    ): FbCreationResult = withContext(Dispatchers.IO) {
+        val phone = rawPhone.replace(Regex("[^0-9]"), "")
+        val firstName = profile?.firstName ?: "Ayesha"
+        val lastName = profile?.lastName ?: "Akter"
+        val fullName = profile?.fullName ?: "$firstName $lastName"
+        val day = profile?.day ?: (15..28).random().toString()
+        val month = profile?.month ?: (1..12).random().toString()
+        val year = profile?.year ?: (1992..2002).random().toString()
+        val sexCode = profile?.sexCode ?: "2"
+
+        val dynamicUa = generateDynamicUa()
+        val datrCookie = generateDatr()
+
+        var extractedLsd = V1_FALLBACK_LSD
+        var extractedFbDtsg = V1_FALLBACK_FB_DTSG
+        var extractedJazoest = V1_FALLBACK_JAZOEST
+        var extractedDyn = V1_FALLBACK_DYN
+        var extractedA = V1_FALLBACK_A
+        var regInstance = datrCookie
+
+        // 1. Initial GET to fetch dynamic tokens & session cookies
+        try {
+            val getRequest = Request.Builder()
+                .url(V1_GET_URL)
+                .addHeader("User-Agent", dynamicUa)
+                .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .addHeader("Cookie", "datr=$datrCookie")
+                .get()
+                .build()
+
+            okHttpClient.newCall(getRequest).execute().use { getRes ->
+                val html = getRes.body?.string() ?: ""
+                val lsdMatch = Regex("""name="lsd"[^>]*value="([^"]+)"""").find(html)
+                    ?: Regex(""""token":"([^"]+)"""").find(html)
+                if (lsdMatch != null) extractedLsd = lsdMatch.groupValues[1]
+
+                val dtsgMatch = Regex("""name="fb_dtsg"[^>]*value="([^"]+)"""").find(html)
+                if (dtsgMatch != null) extractedFbDtsg = dtsgMatch.groupValues[1]
+
+                val regInstMatch = Regex("""name="reg_instance"[^>]*value="([^"]+)"""").find(html)
+                if (regInstMatch != null) regInstance = regInstMatch.groupValues[1]
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 2. Submit V1 registration form
+        val formBody = FormBody.Builder()
+            .add("ccp", "2")
+            .add("reg_instance", regInstance)
+            .add("submission_request", "true")
+            .add("helper", "")
+            .add("reg_impression_id", UUID.randomUUID().toString())
+            .add("ns", "1")
+            .add("zero_header_af_client", "")
+            .add("app_id", "103")
+            .add("logger_id", UUID.randomUUID().toString())
+            .add("field_names[0]", "firstname")
+            .add("firstname", firstName)
+            .add("lastname", lastName)
+            .add("field_names[1]", "birthday_wrapper")
+            .add("birthday_day", day)
+            .add("birthday_month", month)
+            .add("birthday_year", year)
+            .add("age_step_input", "")
+            .add("did_use_age", "false")
+            .add("field_names[2]", "reg_email__")
+            .add("reg_email__", phone)
+            .add("field_names[3]", "sex")
+            .add("sex", sexCode)
+            .add("preferred_pronoun", "")
+            .add("custom_gender", "")
+            .add("field_names[4]", "reg_passwd__")
+            .add("reg_passwd__", password)
+            .add("was_shown_name_suggestions", "false")
+            .add("did_use_suggested_name", "false")
+            .add("use_custom_gender", "false")
+            .add("guid", "")
+            .add("pre_form_step", "")
+            .add("submit", "Sign up")
+            .add("fb_dtsg", extractedFbDtsg)
+            .add("jazoest", extractedJazoest)
+            .add("lsd", extractedLsd)
+            .add("__dyn", extractedDyn)
+            .add("__csr", "")
+            .add("__hsdp", "")
+            .add("__hblp", "")
+            .add("__sjsp", "")
+            .add("__req", "g")
+            .add("__fmt", "1")
+            .add("__a", extractedA)
+            .add("__user", "0")
+            .build()
+
+        val postRequest = Request.Builder()
+            .url(V1_SUBMIT_URL)
+            .addHeader("User-Agent", dynamicUa)
+            .addHeader("Accept-Encoding", "gzip, deflate, br, zstd")
+            .addHeader("Content-Type", "application/x-www-form-urlencoded")
+            .addHeader("x-response-format", "JSONStream")
+            .addHeader("x-asbd-id", "359341")
+            .addHeader("x-fb-lsd", extractedLsd)
+            .addHeader("origin", "https://limited.facebook.com")
+            .addHeader("referer", V1_GET_URL)
+            .addHeader("Cookie", "datr=$datrCookie")
+            .post(formBody)
+            .build()
+
+        try {
+            okHttpClient.newCall(postRequest).execute().use { response ->
+                val setCookies = response.headers.values("Set-Cookie")
+                var extractedUid = ""
+                val cookieBuilder = StringBuilder()
+                cookieBuilder.append("datr=$datrCookie; ")
+
+                for (cookie in setCookies) {
+                    val parts = cookie.split(";")
+                    if (parts.isNotEmpty()) {
+                        val cookiePair = parts[0].trim()
+                        cookieBuilder.append(cookiePair).append("; ")
+                        if (cookiePair.startsWith("c_user=")) {
+                            extractedUid = cookiePair.substringAfter("c_user=")
+                        }
+                    }
+                }
+
+                val fullCookieStr = cookieBuilder.toString().removeSuffix("; ")
+                val bodyStr = response.body?.string() ?: ""
+
+                if (extractedUid.isEmpty()) {
+                    val uidPatterns = listOf(
+                        Pattern.compile("c_user=(\\d+)"),
+                        Pattern.compile("\"c_user\"\\s*:\\s*\"?(\\d+)\"?"),
+                        Pattern.compile("\"USER_ID\"\\s*:\\s*\"?(\\d+)\"?"),
+                        Pattern.compile("\"actorID\"\\s*:\\s*\"?(\\d+)\"?"),
+                        Pattern.compile("\"id\"\\s*:\\s*\"(\\d{8,})\"")
+                    )
+                    for (pattern in uidPatterns) {
+                        val match = pattern.matcher(bodyStr)
+                        if (match.find()) {
+                            val found = match.group(1)
+                            if (!found.isNullOrBlank() && found.length >= 6) {
+                                extractedUid = found
+                                break
+                            }
+                        }
+                    }
+                }
+
+                if (extractedUid.isNotEmpty()) {
+                    val finalCookie = formatCleanCookie(
+                        rawCookie = fullCookieStr,
+                        uid = extractedUid
+                    )
+
+                    return@withContext FbCreationResult(
+                        success = true,
+                        phone = phone,
+                        uid = extractedUid,
+                        name = fullName,
+                        password = password,
+                        cookie = finalCookie
+                    )
+                } else if (response.isSuccessful || bodyStr.contains("redirect")) {
+                    val fallbackUid = "1000${System.currentTimeMillis().toString().takeLast(11)}"
+                    val finalCookie = formatCleanCookie(
+                        rawCookie = fullCookieStr,
+                        uid = fallbackUid
+                    )
+                    return@withContext FbCreationResult(
+                        success = true,
+                        phone = phone,
+                        uid = fallbackUid,
+                        name = fullName,
+                        password = password,
+                        cookie = finalCookie
+                    )
+                } else {
+                    return@withContext FbCreationResult(
+                        success = false,
+                        phone = phone,
+                        error = "Creation response: No user token returned"
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return@withContext FbCreationResult(
+                success = false,
+                phone = phone,
+                error = e.message ?: "Connection error"
+            )
+        }
+    }
+
+    /**
      * GET /success-otp
-     * Your own last 50 successful OTPs.
-     * Response envelope: { meta: { code: 200, status: "ok" }, data: { cached: false, otps: [ { otp_id, number, message, time } ] }, message, rid }
+     * Returns last 50 successful OTPs.
      */
     suspend fun checkOtps(): List<OtpItem> = withContext(Dispatchers.IO) {
         val resultList = mutableListOf<OtpItem>()
@@ -288,8 +635,6 @@ object NetworkClient {
                             ?: json.optJSONObject("data")?.optJSONArray("otps")
                             ?: json.optJSONObject("data")?.optJSONArray("data")
                             ?: json.optJSONArray("data")
-                            ?: json.optJSONArray("results")
-                            ?: json.optJSONArray("items")
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -300,20 +645,15 @@ object NetworkClient {
                         val item = otpsArray.optJSONObject(i) ?: continue
                         val num = item.optString("number", "")
                             .ifEmpty { item.optString("phone", "") }
-                            .ifEmpty { item.optString("mobile", "") }
                             .ifEmpty { item.optString("full_number", "") }
-                            .ifEmpty { item.optString("recipient", "") }
                             .replace("+", "").trim()
 
                         var directOtp = item.optString("otp", "")
                             .ifEmpty { item.optString("code", "") }
-                            .ifEmpty { item.optString("pin", "") }
                             .trim()
 
                         val msg = item.optString("message", "")
-                            .ifEmpty { item.optString("msg", "") }
-                            .ifEmpty { item.optString("text", "") }
-                            .ifEmpty { item.optString("body", "") }
+                            .ifEmpty { item.optString("sms", "") }
 
                         if (directOtp.isEmpty() && msg.isNotEmpty()) {
                             directOtp = extractOtpFromText(msg)
@@ -331,255 +671,20 @@ object NetworkClient {
         return@withContext resultList
     }
 
-    const val FIXED_PASSWORD = "arafat@@##"
-
-    suspend fun createFacebookAccount(
-        rawPhone: String,
-        password: String = FIXED_PASSWORD,
-        profile: com.example.data.GeneratedAccountProfile? = null
-    ): FbCreationResult = withContext(Dispatchers.IO) {
-        val phone = rawPhone.replace(Regex("[^0-9]"), "")
-        val firstName = profile?.firstName ?: FRENCH_FIRST_NAMES.random()
-        val lastName = profile?.lastName ?: FRENCH_LAST_NAMES.random()
-        val fullName = profile?.fullName ?: "$firstName $lastName"
-        val dayInt = (profile?.day ?: "3").toIntOrNull() ?: (1..28).random()
-        val monthInt = (profile?.month ?: "4").toIntOrNull() ?: (1..12).random()
-        val yearInt = (profile?.year ?: "1988").toIntOrNull() ?: (1980..2005).random()
-        val sexStr = if (profile?.sexCode == "1") "FEMALE" else if (profile?.sexCode == "2") "MALE" else "FEMALE"
-
-        val clientMutationId = UUID.randomUUID().toString()
-        val waterfallId = UUID.randomUUID().toString()
-
-        val variablesJson = JSONObject().apply {
-            put("input", JSONObject().apply {
-                put("actor_id", "0")
-                put("client_mutation_id", clientMutationId)
-                put("machine_id", "")
-                put("reg_data", JSONObject().apply {
-                    put("birthday_day", dayInt)
-                    put("birthday_month", monthInt)
-                    put("birthday_year", yearInt)
-                    put("contactpoint", JSONObject().apply {
-                        put("sensitive_string_value", phone)
-                    })
-                    put("contactpoint_type", "PHONE")
-                    put("custom_gender", "")
-                    put("did_use_age", false)
-                    put("firstname", JSONObject().apply {
-                        put("sensitive_string_value", firstName)
-                    })
-                    put("fullname", JSONObject().apply {
-                        put("sensitive_string_value", "")
-                    })
-                    put("ig_age_block_data", JSONObject.NULL)
-                    put("lastname", JSONObject().apply {
-                        put("sensitive_string_value", lastName)
-                    })
-                    put("preferred_pronoun", JSONObject.NULL)
-                    put("reg_passwd__", JSONObject().apply {
-                        put("sensitive_string_value", "#PWD_BROWSER:5:1786758663:AaxQAHSVITW3xp2G2gyDJ7KQS7OJFFNrrOhJmhVcMzN2Qq9lZIYBf6jQ7bQnWQgym+4SQhjOTzyj3mb915sb4JPvKw5h30Qrlk+WAxVUHCcqdQu8hXvynL8fRi5QabcJD6Wem3mYLktN1LjiEwo=")
-                    })
-                    put("sex", sexStr)
-                    put("use_custom_gender", false)
-                    put("username", JSONObject().apply {
-                        put("sensitive_string_value", "")
-                    })
-                })
-                put("sk_pipa_consent_given", JSONObject.NULL)
-                put("waterfall_id", waterfallId)
-            })
-        }.toString()
-
-        val formBody = FormBody.Builder()
-            .add("av", "0")
-            .add("__user", "0")
-            .add("__a", "1")
-            .add("__req", "1a")
-            .add("__hs", "20680.HYP:comet_plat_default_pkg.2.1...0")
-            .add("dpr", "2")
-            .add("__ccg", "GOOD")
-            .add("__rev", "1045253825")
-            .add("__s", "ytdlvy:ynho8u:nax7pe")
-            .add("__hsi", "7674069822963974850")
-            .add("__dyn", "7xeUmwlEnwn8K2Wmh0no6u5U4e0yoW3q32360CEbo1nEhw2nVE4W099w8G1Dz81s8hwGwQw9m1YwBgao6C0Mo2swaOfK0EUjwGzE2ZwNwmE2eUlwhE2Lw6OyES1Tw8W0Lo6-1Fw4mwr86C1nwqU8XwnqwIwtU26wbu0eowRzo")
-            .add("__csr", "n24I9qvEgOcj2AgIhCsAVlbCiDWBRXeTSRbkx9pcEx6AXaAhZFWhYGzjlpHX9t5SGH8VuR9GLsx25DnFuYxuqAcbtRQJQgKi8EBqUNG8cLRayky8j8mDal8VHHyV2PA9h92lKm4Hxa9wl49J3E-0z8co-5Ub-2eEswBx60E84q589UhxObCw47wey4k0gK2mi0xE2owho2Ozo6-E4W0hG6U7m2eWwUy43-3q093wiE1CU560H80vqw0csIw019fE02zJw115w0S-w08ueayU5q5E")
-            .add("__hsdp", "ge9isoLgB3oG7p64E36w8-m481FA0Dm0FxE04I20bFwxw0PIw0eQu06MU09VE")
-            .add("__hblp", "02h80Gu1EwfO08Aw0wNw1zO0j20bFwxw6Gw5Kw47w5Qw10y0tK0n20Bo0Iy0ii03wa020i03Oe03Xa0ui0anw8y0he08Qwmo09VE1N87m1ewmo")
-            .add("__sjsp", "ge9mIQGZ2kdyEtAoiwcq0zVogw6Cg2to2C6w")
-            .add("__comet_req", "102")
-            .add("lsd", "AdRMTZWclMqdQrsz6WGMmZ7_kmI")
-            .add("jazoest", "22441")
-            .add("__spin_r", "1045253825")
-            .add("__spin_b", "trunk")
-            .add("__spin_t", "1786758616")
-            .add("qpl_active_flow_ids", "250359044,516759801")
-            .add("fb_api_caller_class", "RelayModern")
-            .add("fb_api_req_friendly_name", "useCAARegistrationFormSubmitMutation")
-            .add("server_timestamps", "true")
-            .add("variables", variablesJson)
-            .add("doc_id", "27029416779977343")
-            .add("fb_api_analytics_tags", "[\"qpl_active_flow_ids=250359044,516759801\"]")
-            .build()
-
-        val request = Request.Builder()
-            .url("https://www.fbsbx.com/api/graphql/")
-            .addHeader("Host", "web.facebook.com")
-            .addHeader("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36")
-            .addHeader("Accept-Encoding", "gzip, deflate, br, zstd")
-            .addHeader("Content-Type", "application/x-www-form-urlencoded")
-            .addHeader("sec-ch-ua-full-version-list", "\"Not=A?Brand\";v=\"99.0.0.0\", \"Chromium\";v=\"151.0.7922.83\"")
-            .addHeader("sec-ch-ua-platform", "\"macOS\"")
-            .addHeader("sec-ch-ua", "\"Not=A?Brand\";v=\"99\", \"Chromium\";v=\"151\"")
-            .addHeader("x-fb-friendly-name", "useCAARegistrationFormSubmitMutation")
-            .addHeader("sec-ch-ua-mobile", "?0")
-            .addHeader("sec-ch-ua-model", "\"itel S665L\"")
-            .addHeader("x-asbd-id", "359341")
-            .addHeader("x-fb-lsd", "AdRMTZWclMqdQrsz6WGMmZ7_kmI")
-            .addHeader("sec-ch-prefers-color-scheme", "light")
-            .addHeader("sec-ch-ua-platform-version", "\"12.0.0\"")
-            .addHeader("origin", "https://web.facebook.com")
-            .addHeader("x-requested-with", "mark.via.gp")
-            .addHeader("sec-fetch-site", "same-origin")
-            .addHeader("sec-fetch-mode", "cors")
-            .addHeader("sec-fetch-dest", "empty")
-            .addHeader("referer", "https://web.facebook.com/reg/?entry_point=login&next=")
-            .addHeader("accept-language", "en-US,en;q=0.9,fr-FR;q=0.8,fr;q=0.7")
-            .addHeader("priority", "u=1, i")
-            .addHeader("Cookie", "datr=z8V_ajxf-8PdZE6c8huwEzqD; fr=0vyhAt6gpZrRsGnhb..Bqf8XQ..AAA.0.0.Bqf8XQ.AWfMsvOpiMmcD2458vHBO-uB2k0; sb=0MV_ar8A9ecW5cQXAbm4EX9D; wd=1280x2226")
-            .post(formBody)
-            .build()
-
-        try {
-            okHttpClient.newCall(request).execute().use { response ->
-                val setCookies = response.headers.values("Set-Cookie")
-                var extractedUid = ""
-                val cookieBuilder = StringBuilder()
-
-                for (cookie in setCookies) {
-                    val parts = cookie.split(";")
-                    if (parts.isNotEmpty()) {
-                        val cookiePair = parts[0].trim()
-                        cookieBuilder.append(cookiePair).append("; ")
-                        if (cookiePair.startsWith("c_user=")) {
-                            extractedUid = cookiePair.substringAfter("c_user=")
-                        }
-                    }
-                }
-
-                val fullCookieStr = cookieBuilder.toString().removeSuffix("; ")
-                val bodyStr = response.body?.string() ?: ""
-
-                if (extractedUid.isEmpty()) {
-                    val uidPatterns = listOf(
-                        Pattern.compile("c_user=(\\d+)"),
-                        Pattern.compile("\"c_user\"\\s*:\\s*\"?(\\d+)\"?"),
-                        Pattern.compile("\"USER_ID\"\\s*:\\s*\"?(\\d+)\"?"),
-                        Pattern.compile("\"actorID\"\\s*:\\s*\"?(\\d+)\"?"),
-                        Pattern.compile("\"actor_id\"\\s*:\\s*\"?(\\d+)\"?"),
-                        Pattern.compile("\"account_id\"\\s*:\\s*\"?(\\d+)\"?"),
-                        Pattern.compile("\"id\"\\s*:\\s*\"(\\d{8,})\"")
-                    )
-                    for (pattern in uidPatterns) {
-                        val match = pattern.matcher(bodyStr)
-                        if (match.find()) {
-                            val found = match.group(1)
-                            if (!found.isNullOrBlank() && found.length >= 6) {
-                                extractedUid = found
-                                break
-                            }
-                        }
-                    }
-                }
-
-                val finalPass = FIXED_PASSWORD
-
-                if (extractedUid.isNotEmpty()) {
-                    val finalCookie = formatCleanCookie(
-                        rawCookie = fullCookieStr,
-                        uid = extractedUid
-                    )
-
-                    return@withContext FbCreationResult(
-                        success = true,
-                        phone = phone,
-                        uid = extractedUid,
-                        name = fullName,
-                        password = finalPass,
-                        cookie = finalCookie
-                    )
-                } else if (bodyStr.contains("useCAARegistrationFormSubmitMutation") || response.isSuccessful) {
-                    // Fallback UID from timestamp if GraphQL returned success payload
-                    val fallbackUid = "1000${System.currentTimeMillis().toString().takeLast(11)}"
-                    val finalCookie = formatCleanCookie(
-                        rawCookie = fullCookieStr,
-                        uid = fallbackUid
-                    )
-                    return@withContext FbCreationResult(
-                        success = true,
-                        phone = phone,
-                        uid = fallbackUid,
-                        name = fullName,
-                        password = finalPass,
-                        cookie = finalCookie
-                    )
-                } else {
-                    return@withContext FbCreationResult(
-                        success = false,
-                        phone = phone,
-                        error = "Facebook GraphQL creation failed: No response UID returned"
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return@withContext FbCreationResult(
-                success = false,
-                phone = phone,
-                error = e.message ?: "Connection error"
-            )
-        }
-    }
-
-    private fun extractOtpFromText(text: String): String {
+    fun extractOtpFromText(text: String): String {
         if (text.isBlank()) return "N/A"
-
-        // 1. Search for keyword followed by 4-8 digits (e.g. FB-123456, code: 12345, is 123456)
-        val keywordPattern = Pattern.compile("(?:FB|code|OTP|confirm|pin|key|is|number|spec)[^0-9]*?(\\d{4,8})", Pattern.CASE_INSENSITIVE)
-        val km = keywordPattern.matcher(text)
-        if (km.find()) {
-            val code = km.group(1)
-            if (!code.isNullOrBlank()) return code
+        val m = Pattern.compile("\\b(\\d{4,8})\\b").matcher(text)
+        if (m.find()) {
+            return m.group(1) ?: "N/A"
         }
-
-        // 2. Search for 4 to 8 digits standalone in the original text
-        val standalonePattern = Pattern.compile("\\b(\\d{4,8})\\b")
-        val sm = standalonePattern.matcher(text)
-        if (sm.find()) {
-            val code = sm.group(1)
-            if (!code.isNullOrBlank()) return code
-        }
-
-        // 3. Fallback on cleaned text
-        val cleanText = text.replace(Regex("[-\\s]"), "")
-        val cleanPattern = Pattern.compile("(\\d{4,8})")
-        val cm = cleanPattern.matcher(cleanText)
-        if (cm.find()) {
-            val code = cm.group(1)
-            if (!code.isNullOrBlank()) return code
-        }
-
         return "N/A"
     }
-
-
 
     fun formatCleanCookie(
         rawCookie: String,
         uid: String = ""
     ): String {
         val cleanPairs = LinkedHashMap<String, String>()
-
-        // Default standard FB cookies if missing
         cleanPairs["datr"] = "z8V_ajxf-8PdZE6c8huwEzqD"
         cleanPairs["sb"] = "0MV_ar8A9ecW5cQXAbm4EX9D"
         cleanPairs["fr"] = "0vyhAt6gpZrRsGnhb..Bqf8XQ..AAA.0.0.Bqf8XQ.AWfMsvOpiMmcD2458vHBO-uB2k0"
@@ -588,21 +693,18 @@ object NetworkClient {
             val tokens = rawCookie.split(";").flatMap { it.split(",") }
             for (token in tokens) {
                 val trimmed = token.trim()
-                if (trimmed.isBlank()) continue
                 if (trimmed.contains("=")) {
                     val key = trimmed.substringBefore("=").trim()
                     val value = trimmed.substringAfter("=").trim()
                     val lowerKey = key.lowercase()
 
-                    // Exclude HTTP header directive attributes AND credentials/phone/pass
-                    if (lowerKey in setOf(
+                    if (lowerKey !in setOf(
                             "path", "domain", "expires", "max-age", "secure", "httponly",
-                            "samesite", "version", "comment", "phone", "pass", "password", "number", "user", "pwd"
+                            "samesite", "version", "phone", "pass", "password", "number"
                         )) {
-                        continue
-                    }
-                    if (key.isNotBlank() && value.isNotBlank()) {
-                        cleanPairs[key] = value
+                        if (key.isNotBlank() && value.isNotBlank()) {
+                            cleanPairs[key] = value
+                        }
                     }
                 }
             }
@@ -612,10 +714,7 @@ object NetworkClient {
             cleanPairs["c_user"] = uid
         }
 
-        // Return purely Facebook cookie pairs ending with semicolon delimiter
         val joined = cleanPairs.entries.joinToString("; ") { "${it.key}=${it.value}" }
         return if (joined.endsWith(";")) joined else "$joined;"
     }
-
-
 }

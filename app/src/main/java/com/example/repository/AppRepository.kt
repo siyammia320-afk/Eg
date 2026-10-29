@@ -83,7 +83,7 @@ class AppRepository(context: Context) {
     }
 
     suspend fun fetchNumber(rangeCode: String): String? {
-        val num = NetworkClient.fetchNumber(rangeCode)
+        val (num, _) = NetworkClient.acquireCheckedNumber(rangeCode)
         if (!num.isNullOrBlank()) {
             registerActiveNumber(num)
         }

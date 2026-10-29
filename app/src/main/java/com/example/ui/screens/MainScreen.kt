@@ -1,7 +1,5 @@
 package com.example.ui.screens
 
-import com.example.model.AccountEntity
-import com.example.model.RangeItem
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -19,9 +17,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,19 +26,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.VpnKey
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -52,10 +42,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -70,26 +56,29 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.model.AccountEntity
+import com.example.model.RangeItem
 import com.example.ui.viewmodel.MainViewModel
 
-// Flat High-Contrast Color Palette (NO GLOW, NO HEAVY ANIMATIONS)
-private val DarkCanvas = Color(0xFF121218)
-private val CardBackground = Color(0xFF1E1E28)
+// Flat Solid Non-Glowing Theme (NO GLOW, NO NEON, CLEAN FLAT UI)
+private val DarkCanvas = Color(0xFF13141A)
+private val CardBackground = Color(0xFF1C1E26)
 private val PrimaryFbBlue = Color(0xFF1877F2)
-private val AccentGreen = Color(0xFF00C853)
-private val DangerRed = Color(0xFFD50000)
-private val BorderColor = Color(0xFF2C2C3A)
+private val AccentGreen = Color(0xFF2E7D32) // Solid flat green
+private val DangerRed = Color(0xFFC62828)
+private val BorderColor = Color(0xFF2A2D38) // Solid flat border
 private val TextPrimary = Color(0xFFFFFFFF)
-private val TextSecondary = Color(0xFFA0A0B0)
+private val TextSecondary = Color(0xFF9EA0AA)
+private val BadgeBackground = Color(0xFF242732)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,15 +86,10 @@ fun MainScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    var passwordInput by remember { mutableStateOf(uiState.savedPassword) }
     var showHistoryDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.checkPermissions(context)
-    }
-
-    LaunchedEffect(uiState.savedPassword) {
-        passwordInput = uiState.savedPassword
     }
 
     LaunchedEffect(uiState.statusMessage) {
@@ -121,7 +105,7 @@ fun MainScreen(viewModel: MainViewModel) {
                     Text(
                         text = "FB CREATOR",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
+                        fontSize = 18.sp,
                         color = TextPrimary
                     )
                 },
@@ -129,16 +113,20 @@ fun MainScreen(viewModel: MainViewModel) {
                     containerColor = CardBackground
                 ),
                 actions = {
-
                     Button(
                         onClick = { showHistoryDialog = true },
                         colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
-                        shape = RoundedCornerShape(6.dp),
+                        shape = RoundedCornerShape(4.dp),
                         modifier = Modifier
                             .padding(end = 8.dp)
                             .testTag("open_history_button")
                     ) {
-                        Text("HISTORY (${uiState.accountsHistory.size})", fontSize = 11.sp, color = TextPrimary)
+                        Text(
+                            text = "HISTORY (${uiState.accountsHistory.size})",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
                     }
                 }
             )
@@ -150,7 +138,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // 1. OVERLAY PERMISSION CARD (IF NEEDED)
             if (!uiState.isOverlayPermissionGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -167,7 +155,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 }
             }
 
-            // 1.5 LIVE STATUS BANNER CARD
+            // 2. LIVE STATUS BANNER CARD
             item {
                 LiveStatusCard(
                     statusMessage = uiState.statusMessage,
@@ -176,10 +164,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 )
             }
 
-            // ============================================
-            // FACEBOOK AUTOMATION FLOW
-            // ============================================
-            // 2. START & STOP SERVICE CONTROL CARD
+            // 3. START & STOP SERVICE CONTROL CARD
             item {
                 ServiceControlCard(
                     isRunning = uiState.isServiceRunning,
@@ -189,21 +174,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 )
             }
 
-            // 3. ACCOUNT PROFILE & NAME CONFIGURATION (LANGUAGE, GENDER, AGE)
-            item {
-                AccountConfigCard(
-                    currentLanguage = uiState.nameLanguage,
-                    currentGender = uiState.genderConfig,
-                    currentAge = uiState.ageFilter,
-                    onLanguageChange = { viewModel.setNameLanguage(it) },
-                    onGenderChange = { viewModel.setGenderConfig(it) },
-                    onAgeChange = { viewModel.setAgeFilter(it) }
-                )
-            }
-
-
-
-            // 5. FIXED SYSTEM PASSWORD CARD (LOCKED)
+            // 4. FIXED SYSTEM PASSWORD CARD (LOCKED)
             item {
                 FixedPasswordCard(
                     fixedPassword = com.example.api.NetworkClient.FIXED_PASSWORD,
@@ -216,11 +187,10 @@ fun MainScreen(viewModel: MainViewModel) {
                 )
             }
 
-            // 5.5 VOLTX SMS API TOKEN CARD
+            // 5. VOLTX SMS API TOKEN CARD (LOCKED & VERIFIED)
             item {
                 ApiConfigCard(
-                    currentApiKey = uiState.apiKey,
-                    onUpdateApiKey = { viewModel.updateApiKey(it) }
+                    currentApiKey = uiState.apiKey
                 )
             }
 
@@ -236,7 +206,7 @@ fun MainScreen(viewModel: MainViewModel) {
                 )
             }
 
-            // 5. QUICK HISTORY PREVIEW
+            // 7. QUICK RECENT ACCOUNTS PREVIEW
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -246,7 +216,7 @@ fun MainScreen(viewModel: MainViewModel) {
                     Text(
                         text = "RECENT ACCOUNTS",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         color = TextSecondary
                     )
                     Text(
@@ -266,14 +236,14 @@ fun MainScreen(viewModel: MainViewModel) {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = CardBackground),
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(6.dp),
                         border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
                     ) {
                         Text(
-                            text = "No accounts created yet. Tap Start or press floating button.",
+                            text = "No accounts created yet. Tap Start or press Create 1 Account Now.",
                             color = TextSecondary,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(16.dp)
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(14.dp)
                         )
                     }
                 }
@@ -310,20 +280,18 @@ fun MainScreen(viewModel: MainViewModel) {
             onClearAll = { viewModel.clearHistory() }
         )
     }
-
-
 }
 
 @Composable
 private fun PermissionCard(onGrantClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF332000)),
-        shape = RoundedCornerShape(8.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF9800))
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF261D12)),
+        shape = RoundedCornerShape(6.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE65100))
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -333,27 +301,27 @@ private fun PermissionCard(onGrantClick: () -> Unit) {
                     text = "Display Overlay Permission Required",
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFFFFB74D),
-                    fontSize = 14.sp
+                    fontSize = 13.sp
                 )
             }
             Text(
-                text = "To enable the circular floating button on screen, please grant overlay permission.",
-                color = Color.White,
+                text = "To enable the floating button on screen, please grant overlay permission.",
+                color = TextPrimary,
                 fontSize = 12.sp
             )
             Button(
                 onClick = onGrantClick,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100)),
                 shape = RoundedCornerShape(4.dp),
-                modifier = Modifier.fillMaxWidth().testTag("grant_permission_button")
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("grant_permission_button")
             ) {
-                Text("GRANT PERMISSION IN SETTINGS", color = Color.Black, fontWeight = FontWeight.Bold)
+                Text("GRANT PERMISSION IN SETTINGS", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
         }
     }
 }
-
-
 
 @Composable
 private fun ServiceControlCard(
@@ -365,12 +333,12 @@ private fun ServiceControlCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(6.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, if (isRunning) AccentGreen else BorderColor)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -381,7 +349,7 @@ private fun ServiceControlCard(
                     Text(
                         text = "FLOATING OVERLAY SERVICE",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         color = TextPrimary
                     )
                     Text(
@@ -393,16 +361,15 @@ private fun ServiceControlCard(
                 }
             }
 
-            // START / STOP TOGGLE BUTTON
             Button(
                 onClick = onToggleClick,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isRunning) DangerRed else AccentGreen
                 ),
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(4.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .height(44.dp)
                     .testTag("start_stop_button")
             ) {
                 Icon(
@@ -414,20 +381,19 @@ private fun ServiceControlCard(
                 Text(
                     text = if (isRunning) "STOP OVERLAY SERVICE" else "START OVERLAY SERVICE",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
+                    fontSize = 13.sp,
                     color = Color.White
                 )
             }
 
-            // MANUAL CREATE BUTTON
             Button(
                 onClick = onCreateNowClick,
                 enabled = !isCreating,
                 colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(4.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(44.dp)
+                    .height(42.dp)
                     .testTag("create_now_button")
             ) {
                 Text(
@@ -449,12 +415,12 @@ private fun FixedPasswordCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(6.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -467,7 +433,7 @@ private fun FixedPasswordCard(
                     Text(
                         text = "SYSTEM PASSWORD (LOCKED 🔒)",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         color = TextPrimary
                     )
                 }
@@ -475,36 +441,36 @@ private fun FixedPasswordCard(
                 Button(
                     onClick = onCopyPassword,
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
-                    shape = RoundedCornerShape(6.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    shape = RoundedCornerShape(4.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                 ) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("COPY", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("COPY", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(4.dp),
                 color = DarkCanvas,
                 border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
+                        .padding(10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = fixedPassword,
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF4DEAEA)
+                        color = TextPrimary
                     )
                     Text(
-                        text = "ENCODED IN GraphQL",
+                        text = "V1 FIXED PASS",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextSecondary
@@ -513,7 +479,7 @@ private fun FixedPasswordCard(
             }
 
             Text(
-                text = "ℹ️ পাসওয়ার্ড পরিবর্তন করার কোনো প্রয়োজন নেই। GraphQL CAA Payload-এর ভিতর পাসওয়ার্ড ইঙ্কোড সেট করা আছে। সকল একাউন্টের পাসওয়ার্ড: $fixedPassword",
+                text = "সকল অ্যাকাউন্টের জন্য ফিক্সড পাসওয়ার্ড: $fixedPassword",
                 fontSize = 11.sp,
                 color = TextSecondary
             )
@@ -523,20 +489,19 @@ private fun FixedPasswordCard(
 
 @Composable
 private fun ApiConfigCard(
-    currentApiKey: String,
-    onUpdateApiKey: ((String) -> Unit)? = null
+    currentApiKey: String
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("api_config_card"),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(8.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00C853).copy(alpha = 0.5f))
+        shape = RoundedCornerShape(6.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -549,19 +514,19 @@ private fun ApiConfigCard(
                     Text(
                         text = "VOLTX SMS API (SECURITY LOCKED 🔒)",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         color = TextPrimary
                     )
                 }
 
                 Surface(
                     shape = RoundedCornerShape(4.dp),
-                    color = AccentGreen.copy(alpha = 0.15f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentGreen)
+                    color = BadgeBackground,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
                 ) {
                     Text(
-                        text = "ACTIVE & LOCKED",
-                        fontSize = 10.sp,
+                        text = "LOCKED & VERIFIED",
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         color = AccentGreen,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -571,7 +536,7 @@ private fun ApiConfigCard(
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(6.dp),
+                shape = RoundedCornerShape(4.dp),
                 color = DarkCanvas,
                 border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
             ) {
@@ -586,28 +551,28 @@ private fun ApiConfigCard(
                     ) {
                         Text(
                             text = "Header mauthapi: $currentApiKey",
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF4DEAEA)
+                            color = TextPrimary
                         )
                         Text(
                             text = "3x Base64 Vault",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = AccentGreen
+                            color = TextSecondary
                         )
                     }
 
                     Text(
-                        text = "Endpoints: /getnum • /liveaccess • /success-otp • /console (live feed)",
+                        text = "Endpoints: /getnum • /liveaccess • /success-otp • /console",
                         fontSize = 10.sp,
                         color = TextSecondary
                     )
 
                     Text(
-                        text = "🛡️ Anti-Tamper: APK ওপেন করার সাথে সাথে কোনো মডিফিকেশন ধরা পড়লে স্বয়ংক্রিয়ভাবে Auto-Exit হবে।",
+                        text = "🛡️ Anti-Tamper: APK মডিফিকেশন হলে স্বয়ংক্রিয়ভাবে Auto-Exit কার্যকর হবে।",
                         fontSize = 10.sp,
-                        color = Color(0xFF81C784)
+                        color = TextSecondary
                     )
                 }
             }
@@ -627,11 +592,11 @@ private fun FacebookRangeCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(6.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
@@ -642,7 +607,7 @@ private fun FacebookRangeCard(
                 Text(
                     text = "FACEBOOK RANGES (LIVE)",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     color = TextPrimary
                 )
 
@@ -674,7 +639,7 @@ private fun FacebookRangeCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(
-                                    color = if (isSelected) Color(0xFF132B4F) else DarkCanvas,
+                                    color = if (isSelected) Color(0xFF1E2838) else DarkCanvas,
                                     shape = RoundedCornerShape(6.dp)
                                 )
                                 .border(
@@ -683,7 +648,7 @@ private fun FacebookRangeCard(
                                     shape = RoundedCornerShape(6.dp)
                                 )
                                 .clickable { onSelectRange(rangeItem.code) }
-                                .padding(12.dp)
+                                .padding(10.dp)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -694,43 +659,43 @@ private fun FacebookRangeCard(
                                     text = "Range: ${rangeItem.code}",
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                     color = if (isSelected) PrimaryFbBlue else TextPrimary,
-                                    fontSize = 14.sp
+                                    fontSize = 13.sp
                                 )
                                 if (isSelected) {
-                                    Text("SELECTED", color = AccentGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("SELECTED", color = AccentGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
 
                             if (!liveMessage.isNullOrBlank()) {
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Surface(
-                                    color = Color(0xFF1E3A2B),
+                                    color = BadgeBackground,
                                     shape = RoundedCornerShape(4.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00C853)),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "💬 LIVE SMS: ",
+                                            text = "SMS: ",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color(0xFF00E676)
+                                            color = TextSecondary
                                         )
                                         Text(
                                             text = liveMessage,
                                             fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color.White
+                                            fontWeight = FontWeight.Normal,
+                                            color = TextPrimary
                                         )
                                     }
                                 }
                             } else {
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "⏳ লাইভ এসএমএস এর জন্য অপেক্ষা করা হচ্ছে...",
+                                    text = "লাইভ মেসেজের জন্য অপেক্ষা করা হচ্ছে...",
                                     fontSize = 10.sp,
                                     color = TextSecondary
                                 )
@@ -769,20 +734,20 @@ fun AccountItemRow(
                 Text(
                     text = "NUMBER: ${account.phone}",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = Color(0xFF4DEAEA)
+                    fontSize = 14.sp,
+                    color = TextPrimary
                 )
 
                 IconButton(
                     onClick = onDelete,
-                    modifier = Modifier.testTag("delete_account_${account.id}")
+                    modifier = Modifier.size(28.dp).testTag("delete_account_${account.id}")
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = "Remove", tint = DangerRed)
                 }
             }
 
             val clipboardManager = LocalClipboardManager.current
-            val context = androidx.compose.ui.platform.LocalContext.current
+            val context = LocalContext.current
 
             if (!account.otp.isNullOrEmpty()) {
                 Row(
@@ -793,7 +758,7 @@ fun AccountItemRow(
                     Text(
                         text = "OTP: ${account.otp}",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         color = AccentGreen
                     )
                     Button(
@@ -804,22 +769,22 @@ fun AccountItemRow(
                         colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
                         shape = RoundedCornerShape(4.dp),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
+                        modifier = Modifier.height(26.dp)
                     ) {
-                        Text("COPY OTP", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                        Text("COPY OTP", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             } else {
                 val isExpired = (System.currentTimeMillis() - account.timestamp) > (20 * 60 * 1000L)
                 Text(
                     text = if (isExpired) "Expired" else "Waiting for OTP...",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 13.sp,
                     color = if (isExpired) DangerRed else Color(0xFFFFB74D)
                 )
             }
 
-            // EXACT 3 COPY BUTTONS REQUIREMENT: NUMBER, COOKIE, UID
+            // EXACT 3 COPY BUTTONS: NUMBER, COOKIE, UID
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -830,7 +795,7 @@ fun AccountItemRow(
                     shape = RoundedCornerShape(4.dp),
                     modifier = Modifier
                         .weight(1f)
-                        .height(36.dp)
+                        .height(34.dp)
                         .testTag("copy_number_button_${account.id}")
                 ) {
                     Text("NUMBER", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -838,11 +803,11 @@ fun AccountItemRow(
 
                 Button(
                     onClick = onCopyCookie,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
                     shape = RoundedCornerShape(4.dp),
                     modifier = Modifier
                         .weight(1f)
-                        .height(36.dp)
+                        .height(34.dp)
                         .testTag("copy_cookie_button_${account.id}")
                 ) {
                     Text("COOKIE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -850,11 +815,11 @@ fun AccountItemRow(
 
                 Button(
                     onClick = onCopyUid,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF57C00)),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100)),
                     shape = RoundedCornerShape(4.dp),
                     modifier = Modifier
                         .weight(1f)
-                        .height(36.dp)
+                        .height(34.dp)
                         .testTag("copy_uid_button_${account.id}")
                 ) {
                     Text("UID", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -879,15 +844,15 @@ fun HistoryDialogView(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(550.dp),
-            shape = RoundedCornerShape(12.dp),
+                .height(540.dp),
+            shape = RoundedCornerShape(8.dp),
             color = CardBackground,
             border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .padding(14.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -897,7 +862,7 @@ fun HistoryDialogView(
                     Text(
                         text = "ACCOUNTS HISTORY",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         color = TextPrimary
                     )
 
@@ -905,7 +870,8 @@ fun HistoryDialogView(
                         Button(
                             onClick = onRefreshOtp,
                             colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
-                            shape = RoundedCornerShape(4.dp)
+                            shape = RoundedCornerShape(4.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text("OTP REFRESH", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
                         }
@@ -913,14 +879,15 @@ fun HistoryDialogView(
                         Button(
                             onClick = onDismiss,
                             colors = ButtonDefaults.buttonColors(containerColor = DangerRed),
-                            shape = RoundedCornerShape(4.dp)
+                            shape = RoundedCornerShape(4.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text("CLOSE", fontSize = 10.sp, color = Color.White)
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 if (historyList.isEmpty()) {
                     Box(
@@ -929,12 +896,12 @@ fun HistoryDialogView(
                             .weight(1f),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("No accounts recorded.", color = TextSecondary, fontSize = 13.sp)
+                        Text("No accounts recorded.", color = TextSecondary, fontSize = 12.sp)
                     }
                 } else {
                     LazyColumn(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(historyList, key = { it.id }) { item ->
                             AccountItemRow(
@@ -947,15 +914,15 @@ fun HistoryDialogView(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Button(
                         onClick = onClearAll,
                         colors = ButtonDefaults.buttonColors(containerColor = DangerRed),
-                        shape = RoundedCornerShape(6.dp),
+                        shape = RoundedCornerShape(4.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("CLEAR ALL HISTORY", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.White)
+                        Text("CLEAR ALL HISTORY", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White)
                     }
                 }
             }
@@ -969,192 +936,6 @@ private fun copyTextToClipboard(context: Context, label: String, text: String) {
     clipboard.setPrimaryClip(clip)
     Toast.makeText(context, "Copied $label: $text", Toast.LENGTH_SHORT).show()
 }
-
-@Composable
-private fun AccountConfigCard(
-    currentLanguage: String,
-    currentGender: String,
-    currentAge: String,
-    onLanguageChange: (String) -> Unit,
-    onGenderChange: (String) -> Unit,
-    onAgeChange: (String) -> Unit
-) {
-    val sampleProfile = remember(currentLanguage, currentGender, currentAge) {
-        com.example.data.NameGenerator.generateProfile(currentGender, currentLanguage, currentAge)
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(8.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = "⚙️ NAME & PROFILE CONFIGURATION",
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                color = TextPrimary
-            )
-
-            // 1. NAME LANGUAGE SELECTOR
-            Text(
-                text = "Name Language (নামের ভাষা):",
-                fontSize = 12.sp,
-                color = TextSecondary,
-                fontWeight = FontWeight.Bold
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChipButton(
-                    text = "🇧🇩 বাংলা",
-                    isSelected = currentLanguage == "BANGLA",
-                    onClick = { onLanguageChange("BANGLA") },
-                    modifier = Modifier.weight(1f)
-                )
-                FilterChipButton(
-                    text = "🇫🇷 French",
-                    isSelected = currentLanguage == "FRENCH",
-                    onClick = { onLanguageChange("FRENCH") },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChipButton(
-                    text = "🇬🇧 English",
-                    isSelected = currentLanguage == "ENGLISH",
-                    onClick = { onLanguageChange("ENGLISH") },
-                    modifier = Modifier.weight(1f)
-                )
-                FilterChipButton(
-                    text = "🇸🇦 Arabic",
-                    isSelected = currentLanguage == "ARABIC",
-                    onClick = { onLanguageChange("ARABIC") },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // 2. GENDER SELECTOR
-            Text(
-                text = "Gender (লিঙ্গ):",
-                fontSize = 12.sp,
-                color = TextSecondary,
-                fontWeight = FontWeight.Bold
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChipButton(
-                    text = "👧 Female (মেয়ে)",
-                    isSelected = currentGender == "FEMALE",
-                    onClick = { onGenderChange("FEMALE") },
-                    modifier = Modifier.weight(1f)
-                )
-                FilterChipButton(
-                    text = "👦 Male (ছেলে)",
-                    isSelected = currentGender == "MALE",
-                    onClick = { onGenderChange("MALE") },
-                    modifier = Modifier.weight(1f)
-                )
-                FilterChipButton(
-                    text = "🎲 Random",
-                    isSelected = currentGender == "RANDOM",
-                    onClick = { onGenderChange("RANDOM") },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // 3. AGE FILTER
-            Text(
-                text = "Age Range (বয়সসীমা):",
-                fontSize = 12.sp,
-                color = TextSecondary,
-                fontWeight = FontWeight.Bold
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                FilterChipButton(
-                    text = "18+ (১৮-৩৫ বছর)",
-                    isSelected = currentAge == "18+",
-                    onClick = { onAgeChange("18+") },
-                    modifier = Modifier.weight(1f)
-                )
-                FilterChipButton(
-                    text = "21+ (২১-৩৫ বছর)",
-                    isSelected = currentAge == "21+",
-                    onClick = { onAgeChange("21+") },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            // LIVE SAMPLE PREVIEW BADGE
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(6.dp),
-                color = Color(0xFF1E2638),
-                border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryFbBlue.copy(alpha = 0.5f))
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Text(
-                        text = "LIVE NAME PREVIEW:",
-                        fontSize = 10.sp,
-                        color = TextSecondary,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "${sampleProfile.fullName} (${if (sampleProfile.sexCode == "1") "Female" else "Male"}, Age Birth Year: ${sampleProfile.year})",
-                        fontSize = 14.sp,
-                        color = AccentGreen,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun FilterChipButton(
-    text: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (isSelected) PrimaryFbBlue else CardBackground
-        ),
-        shape = RoundedCornerShape(6.dp),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (isSelected) PrimaryFbBlue else BorderColor
-        ),
-        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
-        modifier = modifier.height(38.dp)
-    ) {
-        Text(
-            text = text,
-            fontSize = 11.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            color = if (isSelected) Color.White else TextSecondary,
-            maxLines = 1
-        )
-    }
-}
-
-
 
 @Composable
 private fun LiveStatusCard(
@@ -1171,24 +952,18 @@ private fun LiveStatusCard(
         isCreating -> PrimaryFbBlue
         isSuccess -> AccentGreen
         isError -> DangerRed
-        else -> PrimaryFbBlue
-    }
-
-    val bgColor = when {
-        isSuccess -> Color(0xFF132F1A)
-        isError -> Color(0xFF3B1A1A)
-        else -> Color(0xFF1A2638)
+        else -> BorderColor
     }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = bgColor),
-        shape = RoundedCornerShape(8.dp),
-        border = androidx.compose.foundation.BorderStroke(1.5.dp, borderColor)
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        shape = RoundedCornerShape(6.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1198,16 +973,16 @@ private fun LiveStatusCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isCreating) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
+                            modifier = Modifier.size(16.dp),
                             color = PrimaryFbBlue,
                             strokeWidth = 2.dp
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                     }
                     Text(
-                        text = if (isCreating) "CREATION IN PROGRESS" else "LIVE STATUS",
+                        text = if (isCreating) "CREATION IN PROGRESS" else "STATUS",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         color = borderColor
                     )
                 }
@@ -1215,7 +990,7 @@ private fun LiveStatusCard(
                 if (!isCreating) {
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(20.dp)
                     ) {
                         Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = TextSecondary)
                     }
@@ -1225,8 +1000,8 @@ private fun LiveStatusCard(
             Text(
                 text = statusMessage ?: "Processing request...",
                 color = TextPrimary,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Normal
             )
         }
     }
