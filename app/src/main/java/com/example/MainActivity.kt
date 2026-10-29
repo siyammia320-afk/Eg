@@ -45,7 +45,6 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // 🔒 Secondary anti-tamper check on resume
         com.example.security.ApiSecurityManager.enforceIntegrityOrExit(this)
-        viewModel.checkPermissions(this)
     }
 
     private fun checkNotificationPermission() {

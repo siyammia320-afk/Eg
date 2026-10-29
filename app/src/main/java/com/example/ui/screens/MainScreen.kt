@@ -3,10 +3,6 @@ package com.example.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -32,8 +29,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -42,6 +38,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -60,6 +58,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,15 +68,16 @@ import com.example.model.AccountEntity
 import com.example.model.RangeItem
 import com.example.ui.viewmodel.MainViewModel
 
-// Flat Solid Non-Glowing Theme (NO GLOW, NO NEON, CLEAN FLAT UI)
+// Flat Solid Theme (NO GLOW, NO NEON, CLEAN FLAT UI)
 private val DarkCanvas = Color(0xFF13141A)
 private val CardBackground = Color(0xFF1C1E26)
 private val PrimaryFbBlue = Color(0xFF1877F2)
-private val AccentGreen = Color(0xFF2E7D32) // Solid flat green
+private val AccentGreen = Color(0xFF2E7D32)
 private val DangerRed = Color(0xFFC62828)
-private val BorderColor = Color(0xFF2A2D38) // Solid flat border
+private val BorderColor = Color(0xFF2A2D38)
 private val TextPrimary = Color(0xFFFFFFFF)
 private val TextSecondary = Color(0xFF9EA0AA)
+private val TerminalBg = Color(0xFF0D0E12)
 private val BadgeBackground = Color(0xFF242732)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,10 +86,13 @@ fun MainScreen(viewModel: MainViewModel) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
+    var passwordInput by remember { mutableStateOf(uiState.customPassword) }
     var showHistoryDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        viewModel.checkPermissions(context)
+    LaunchedEffect(uiState.customPassword) {
+        if (passwordInput != uiState.customPassword) {
+            passwordInput = uiState.customPassword
+        }
     }
 
     LaunchedEffect(uiState.statusMessage) {
@@ -102,12 +105,19 @@ fun MainScreen(viewModel: MainViewModel) {
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "FB CREATOR",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = TextPrimary
-                    )
+                    Column {
+                        Text(
+                            text = "PREMIUM AUTO CREATE FB",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "V1 Engine • GraphQL CAA Number Checker",
+                            fontSize = 11.sp,
+                            color = TextSecondary
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = CardBackground
@@ -137,25 +147,10 @@ fun MainScreen(viewModel: MainViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 1. OVERLAY PERMISSION CARD (IF NEEDED)
-            if (!uiState.isOverlayPermissionGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                item {
-                    PermissionCard(
-                        onGrantClick = {
-                            val intent = Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                            context.startActivity(intent)
-                        }
-                    )
-                }
-            }
-
-            // 2. LIVE STATUS BANNER CARD
+            // 1. LIVE STATUS BANNER CARD
             item {
                 LiveStatusCard(
                     statusMessage = uiState.statusMessage,
@@ -164,37 +159,78 @@ fun MainScreen(viewModel: MainViewModel) {
                 )
             }
 
-            // 3. START & STOP SERVICE CONTROL CARD
+            // 2. CUSTOM PASSWORD CARD (DIRECT INPUT LIKE PYTHON)
             item {
-                ServiceControlCard(
-                    isRunning = uiState.isServiceRunning,
-                    onToggleClick = { viewModel.toggleService(context) },
-                    onCreateNowClick = { viewModel.createAccountNow(context) },
-                    isCreating = uiState.isCreatingAccount
-                )
-            }
-
-            // 4. FIXED SYSTEM PASSWORD CARD (LOCKED)
-            item {
-                FixedPasswordCard(
-                    fixedPassword = com.example.api.NetworkClient.FIXED_PASSWORD,
-                    onCopyPassword = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("PASSWORD", com.example.api.NetworkClient.FIXED_PASSWORD)
-                        clipboard.setPrimaryClip(clip)
-                        Toast.makeText(context, "Copied Password: ${com.example.api.NetworkClient.FIXED_PASSWORD}", Toast.LENGTH_SHORT).show()
+                CustomPasswordCard(
+                    passwordValue = passwordInput,
+                    onPasswordChange = {
+                        passwordInput = it
+                        viewModel.setCustomPassword(it)
+                    },
+                    onCopy = {
+                        copyTextToClipboard(context, "PASSWORD", passwordInput)
                     }
                 )
             }
 
-            // 5. VOLTX SMS API TOKEN CARD (LOCKED & VERIFIED)
+            // 3. NUMBER CHECKER CARD (GRAPHQL CAA SEARCH)
             item {
-                ApiConfigCard(
-                    currentApiKey = uiState.apiKey
+                NumberCheckerCard(
+                    phoneInput = uiState.manualCheckPhone,
+                    onPhoneChange = { viewModel.setManualPhoneInput(it) },
+                    onCheck = { viewModel.checkManualPhoneNumber() },
+                    isChecking = uiState.isCheckingManualPhone,
+                    result = uiState.manualCheckResult
                 )
             }
 
-            // 6. LIVE FACEBOOK RANGE SELECTOR CARD
+            // 4. MAIN ACTION BUTTON: CREATE 1 ACCOUNT NOW
+            item {
+                Button(
+                    onClick = { viewModel.createAccountNow(passwordInput, context) },
+                    enabled = !uiState.isCreatingAccount,
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("create_now_button")
+                ) {
+                    if (uiState.isCreatingAccount) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "CREATING ACCOUNT (V1)...",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color.White
+                        )
+                    } else {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "CREATE 1 ACCOUNT NOW (V1)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+
+            // 5. LIVE TERMINAL LOGS CARD (MIRRORS PYTHON SCRIPT OUTPUT)
+            item {
+                TerminalLogsCard(
+                    logs = uiState.terminalLogs,
+                    onClearLogs = { viewModel.clearTerminalLogs() }
+                )
+            }
+
+            // 6. LIVE FACEBOOK RANGES SELECTOR CARD
             item {
                 FacebookRangeCard(
                     ranges = uiState.facebookRanges,
@@ -240,7 +276,7 @@ fun MainScreen(viewModel: MainViewModel) {
                         border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
                     ) {
                         Text(
-                            text = "No accounts created yet. Tap Start or press Create 1 Account Now.",
+                            text = "No accounts created yet. Select range and tap Create 1 Account Now.",
                             color = TextSecondary,
                             fontSize = 12.sp,
                             modifier = Modifier.padding(14.dp)
@@ -283,134 +319,10 @@ fun MainScreen(viewModel: MainViewModel) {
 }
 
 @Composable
-private fun PermissionCard(onGrantClick: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF261D12)),
-        shape = RoundedCornerShape(6.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE65100))
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFFFFB74D))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Display Overlay Permission Required",
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFB74D),
-                    fontSize = 13.sp
-                )
-            }
-            Text(
-                text = "To enable the floating button on screen, please grant overlay permission.",
-                color = TextPrimary,
-                fontSize = 12.sp
-            )
-            Button(
-                onClick = onGrantClick,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100)),
-                shape = RoundedCornerShape(4.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("grant_permission_button")
-            ) {
-                Text("GRANT PERMISSION IN SETTINGS", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ServiceControlCard(
-    isRunning: Boolean,
-    onToggleClick: () -> Unit,
-    onCreateNowClick: () -> Unit,
-    isCreating: Boolean
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = CardBackground),
-        shape = RoundedCornerShape(6.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, if (isRunning) AccentGreen else BorderColor)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "FLOATING OVERLAY SERVICE",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = TextPrimary
-                    )
-                    Text(
-                        text = if (isRunning) "STATUS: ACTIVE (Floating button on screen)" else "STATUS: STOPPED",
-                        fontSize = 12.sp,
-                        color = if (isRunning) AccentGreen else TextSecondary,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Button(
-                onClick = onToggleClick,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isRunning) DangerRed else AccentGreen
-                ),
-                shape = RoundedCornerShape(4.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp)
-                    .testTag("start_stop_button")
-            ) {
-                Icon(
-                    imageVector = if (isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    tint = Color.White
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (isRunning) "STOP OVERLAY SERVICE" else "START OVERLAY SERVICE",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = Color.White
-                )
-            }
-
-            Button(
-                onClick = onCreateNowClick,
-                enabled = !isCreating,
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
-                shape = RoundedCornerShape(4.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(42.dp)
-                    .testTag("create_now_button")
-            ) {
-                Text(
-                    text = if (isCreating) "CREATING ACCOUNT..." else "CREATE 1 ACCOUNT NOW",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = Color.White
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun FixedPasswordCard(
-    fixedPassword: String,
-    onCopyPassword: () -> Unit
+private fun CustomPasswordCard(
+    passwordValue: String,
+    onPasswordChange: (String) -> Unit,
+    onCopy: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -427,60 +339,48 @@ private fun FixedPasswordCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Security, contentDescription = null, tint = AccentGreen)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "SYSTEM PASSWORD (LOCKED 🔒)",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = TextPrimary
-                    )
-                }
+                Text(
+                    text = "CUSTOM PASSWORD (ENTER PASSWORD)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = TextPrimary
+                )
 
                 Button(
-                    onClick = onCopyPassword,
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
+                    onClick = onCopy,
+                    colors = ButtonDefaults.buttonColors(containerColor = BadgeBackground),
                     shape = RoundedCornerShape(4.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp)
                 ) {
-                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("COPY", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("COPY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
 
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
+            OutlinedTextField(
+                value = passwordValue,
+                onValueChange = onPasswordChange,
+                placeholder = { Text("Enter password for Facebook account", color = TextSecondary, fontSize = 13.sp) },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PrimaryFbBlue,
+                    unfocusedBorderColor = BorderColor,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary,
+                    focusedContainerColor = DarkCanvas,
+                    unfocusedContainerColor = DarkCanvas
+                ),
                 shape = RoundedCornerShape(4.dp),
-                color = DarkCanvas,
-                border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = fixedPassword,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                    Text(
-                        text = "V1 FIXED PASS",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextSecondary
-                    )
-                }
-            }
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("custom_password_input")
+            )
 
             Text(
-                text = "সকল অ্যাকাউন্টের জন্য ফিক্সড পাসওয়ার্ড: $fixedPassword",
-                fontSize = 11.sp,
+                text = "Python স্ক্রিপ্টের মতো কাস্টম পাসওয়ার্ড দিন। খালি রাখলে ডিফল্ট পাসওয়ার্ড ব্যবহার হবে।",
+                fontSize = 10.sp,
                 color = TextSecondary
             )
         }
@@ -488,13 +388,15 @@ private fun FixedPasswordCard(
 }
 
 @Composable
-private fun ApiConfigCard(
-    currentApiKey: String
+private fun NumberCheckerCard(
+    phoneInput: String,
+    onPhoneChange: (String) -> Unit,
+    onCheck: () -> Unit,
+    isChecking: Boolean,
+    result: String?
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("api_config_card"),
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = CardBackground),
         shape = RoundedCornerShape(6.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
@@ -503,77 +405,154 @@ private fun ApiConfigCard(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            Text(
+                text = "GRAPHQL NUMBER CHECKER (CAA SEARCH)",
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                color = TextPrimary
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = phoneInput,
+                    onValueChange = onPhoneChange,
+                    placeholder = { Text("e.g. +447404333228", color = TextSecondary, fontSize = 12.sp) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PrimaryFbBlue,
+                        unfocusedBorderColor = BorderColor,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedContainerColor = DarkCanvas,
+                        unfocusedContainerColor = DarkCanvas
+                    ),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("manual_phone_input")
+                )
+
+                Button(
+                    onClick = onCheck,
+                    enabled = !isChecking && phoneInput.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryFbBlue),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier
+                        .height(48.dp)
+                        .testTag("check_phone_button")
+                ) {
+                    if (isChecking) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("CHECK", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            }
+
+            if (!result.isNullOrBlank()) {
+                val isFree = result.startsWith("FREE")
+                Surface(
+                    color = if (isFree) Color(0xFF14281A) else Color(0xFF2C1414),
+                    shape = RoundedCornerShape(4.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isFree) AccentGreen else DangerRed),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = if (isFree) "✔ $result" else "✖ $result",
+                        color = if (isFree) Color(0xFF81C784) else Color(0xFFE57373),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TerminalLogsCard(
+    logs: List<String>,
+    onClearLogs: () -> Unit
+) {
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(logs.size) {
+        if (logs.isNotEmpty()) {
+            listState.animateScrollToItem(logs.size - 1)
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = TerminalBg),
+        shape = RoundedCornerShape(6.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Security, contentDescription = null, tint = AccentGreen)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "VOLTX SMS API (SECURITY LOCKED 🔒)",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        color = TextPrimary
-                    )
-                }
+                Text(
+                    text = "TERMINAL CONSOLE (LIVE FEED)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    color = TextSecondary,
+                    fontFamily = FontFamily.Monospace
+                )
 
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = BadgeBackground,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
-                ) {
-                    Text(
-                        text = "LOCKED & VERIFIED",
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = AccentGreen,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
+                Text(
+                    text = "Clear",
+                    fontSize = 11.sp,
+                    color = PrimaryFbBlue,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clickable { onClearLogs() }
+                        .padding(4.dp)
+                )
             }
 
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(4.dp),
-                color = DarkCanvas,
-                border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
-            ) {
-                Column(
-                    modifier = Modifier.padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+            Spacer(modifier = Modifier.height(6.dp))
+
+            if (logs.isEmpty()) {
+                Text(
+                    text = "Ready. Tap 'CREATE 1 ACCOUNT NOW' to start process...",
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.padding(vertical = 12.dp)
+                )
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    items(logs) { line ->
+                        val logColor = when {
+                            line.contains("✔") || line.contains("SUCCESS") || line.contains("NEW OTP") -> Color(0xFF81C784)
+                            line.contains("✖") || line.contains("FAIL") || line.contains("FAILED") -> Color(0xFFE57373)
+                            line.contains("NUMBER:") -> Color(0xFF64B5F6)
+                            else -> TextSecondary
+                        }
+
                         Text(
-                            text = "Header mauthapi: $currentApiKey",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "3x Base64 Vault",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextSecondary
+                            text = line,
+                            color = logColor,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(vertical = 1.dp)
                         )
                     }
-
-                    Text(
-                        text = "Endpoints: /getnum • /liveaccess • /success-otp • /console",
-                        fontSize = 10.sp,
-                        color = TextSecondary
-                    )
-
-                    Text(
-                        text = "🛡️ Anti-Tamper: APK মডিফিকেশন হলে স্বয়ংক্রিয়ভাবে Auto-Exit কার্যকর হবে।",
-                        fontSize = 10.sp,
-                        color = TextSecondary
-                    )
                 }
             }
         }
@@ -740,7 +719,9 @@ fun AccountItemRow(
 
                 IconButton(
                     onClick = onDelete,
-                    modifier = Modifier.size(28.dp).testTag("delete_account_${account.id}")
+                    modifier = Modifier
+                        .size(28.dp)
+                        .testTag("delete_account_${account.id}")
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = "Remove", tint = DangerRed)
                 }

@@ -90,9 +90,9 @@ class AppRepository(context: Context) {
         return num
     }
 
-    suspend fun createAccountForNumber(phone: String, rangeCode: String): FbCreationResult {
+    suspend fun createAccountForNumber(phone: String, rangeCode: String, customPassword: String = ""): FbCreationResult {
         registerActiveNumber(phone)
-        val password = NetworkClient.FIXED_PASSWORD
+        val password = if (customPassword.isNotBlank()) customPassword else getSavedPassword()
         val profile = com.example.data.NameGenerator.generateProfile(
             genderConfig = getGenderConfig(),
             langConfig = getNameLanguage(),
